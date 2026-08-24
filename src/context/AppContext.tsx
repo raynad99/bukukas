@@ -1051,40 +1051,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const registerWithEmail = async (name: string, email: string, _password?: string): Promise<boolean> => {
     const isDev = email.toLowerCase() === 'admin@bukukas.ai.studio' || email.toLowerCase() === 'indoclickshop@gmail.com';
+    const cleanEmail = email.trim();
+    const displayName = name?.trim() || cleanEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     
+    const now = new Date();
+    const trialExpiry = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
     const newUser: UserProfile = {
       id: 'usr-reg-' + Date.now().toString().slice(-4),
-      name,
-      email,
+      name: displayName,
+      email: cleanEmail,
       password: _password || 'Median1986',
-      provider: email.endsWith('@gmail.com') ? 'gmail' : 'password',
+      provider: cleanEmail.endsWith('@gmail.com') ? 'gmail' : 'password',
       isVerified: true,
       role: isDev ? 'admin' : 'user',
       plan: isDev ? 'lifetime' : 'trial',
-      trialStartDate: new Date().toISOString(),
-      trialExpiresDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      trialStartDate: now.toISOString(),
+      trialExpiresDate: trialExpiry.toISOString(),
       registeredSelf: true,
       status: isDev ? 'active' : 'trial',
-      createdAt: new Date().toISOString().slice(0, 10),
+      createdAt: now.toISOString().slice(0, 10),
       lastLoginAt: 'Baru saja',
       customNotes: 'Register mandiri via Website (Trial 7 hari otomatis)',
     };
 
     setCurrentUser(newUser);
-    setSavedUsers(prev => [newUser, ...prev.filter(u => u.email.toLowerCase() !== email.toLowerCase())]);
-    setAllRegisteredAccounts(prev => [newUser, ...prev.filter(u => u.email.toLowerCase() !== email.toLowerCase())]);
-    setCloudSync(prev => ({ ...prev, accountEmail: email, isConnected: true }));
+    setSavedUsers(prev => [newUser, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail.toLowerCase())]);
+    setAllRegisteredAccounts(prev => [newUser, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail.toLowerCase())]);
+    setCloudSync(prev => ({ ...prev, accountEmail: cleanEmail, isConnected: true }));
     
-    confetti({
-      particleCount: 80,
-      spread: 70,
-      origin: { y: 0.6 },
-    });
+    try {
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    } catch {
+      // ignore if canvas is not ready
+    }
 
     addNotification(
       'success',
       'Pendaftaran Berhasil 🎉',
-      `Selamat datang ${name}! Akun Anda aktif dengan Masa Percobaan (Trial) 7 Hari.`
+      `Selamat datang ${displayName}! Akun Anda aktif dengan Masa Percobaan (Trial) 7 Hari hingga ${trialExpiry.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}.`
     );
     return true;
   };

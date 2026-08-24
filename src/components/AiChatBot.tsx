@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ArrowDownLeft,
+  ArrowUpRight,
   Bot,
   Check,
   Copy,
   CornerDownLeft,
   DollarSign,
+  HandCoins,
   HelpCircle,
   Maximize2,
   Minimize2,
@@ -32,24 +35,29 @@ export interface ChatMessage {
 
 const PRESET_PROMPTS = [
   {
+    icon: '💰',
+    label: 'Total Piutang Saya',
+    prompt: 'Berapa total piutang saya saat ini, siapa saja yang belum melunasi, dan kapan jatuh temponya?',
+  },
+  {
+    icon: '💳',
+    label: 'Status Hutang & Cicilan',
+    prompt: 'Tolong rekap seluruh kewajiban hutang yang wajib saya bayar beserta sisa saldo dan jatuh temponya.',
+  },
+  {
     icon: '📊',
-    label: 'Analisis Keuangan Saya',
-    prompt: 'Tolong analisis kondisi kesehatan keuangan saya bulan ini berdasarkan saldo, pemasukan, dan pengeluaran saya.',
+    label: 'Analisis Keuangan & Arus Kas',
+    prompt: 'Tolong analisis kondisi kesehatan keuangan saya bulan ini berdasarkan saldo, pemasukan, pengeluaran, hutang, dan piutang.',
   },
   {
     icon: '💡',
-    label: 'Metode Budgeting 50/30/20',
-    prompt: 'Bagaimana cara menerapkan aturan anggaran 50/30/20 untuk pemasukan bulanan saya saat ini?',
+    label: 'Strategi Pelunasan & Budgeting',
+    prompt: 'Bagaimana strategi terbaik membagi anggaran 50/30/20 dan mempercepat pelunasan hutang saya?',
   },
   {
     icon: '💱',
     label: 'Tips Transaksi Valas',
     prompt: 'Bagaimana strategi terbaik mengelola pembukuan dengan multi mata uang (IDR, NZD, USD, TWD, HKD, SGD)?',
-  },
-  {
-    icon: '⚡',
-    label: 'Optimasi Tagihan & Hemat',
-    prompt: 'Berikan 5 langkah praktis untuk menghemat pengeluaran bulanan dan melunasi tagihan tepat waktu.',
   },
 ];
 
@@ -64,6 +72,7 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
     transactions,
     bills,
     categories,
+    loans,
     currentUser,
     exchangeRates,
   } = useApp();
@@ -81,7 +90,7 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
       {
         id: 'msg-welcome',
         role: 'model',
-        text: `Halo ${currentUser?.name || 'Kak'}! 👋 Saya adalah **Asisten Finansial & Pembukuan AI BukuKas Pro**.\n\nSaya dapat membantu Anda menganalisis arus kas, merancang anggaran (budgeting), memantau tagihan, serta memberikan rekomendasi pengelolaan multi-mata uang. Apa yang ingin Anda diskusikan hari ini?`,
+        text: `Halo ${currentUser?.name || 'Kak'}! 👋 Saya adalah **Asisten Finansial & Pembukuan AI BukuKas Pro**.\n\nSaya dapat membantu Anda menganalisis arus kas, memeriksa status **Hutang & Piutang (Liabilities & Assets)**, merancang anggaran (budgeting), memantau tagihan rutin, serta memberikan rekomendasi pengelolaan keuangan pribadi/usaha. Apa yang ingin Anda tanyakan hari ini?`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ];
@@ -122,6 +131,27 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
   const savingsRate = monthlyIncome > 0 ? Math.round((netSavings / monthlyIncome) * 100) : 0;
   const unpaidBillsCount = bills.filter(b => !b.isPaid).length;
 
+  // Loan metrics calculations
+  const safeLoans = loans || [];
+  const payables = safeLoans.filter(l => l.type === 'payable');
+  const receivables = safeLoans.filter(l => l.type === 'receivable');
+
+  const totalPayableAmount = payables.reduce((sum, l) => sum + l.amount, 0);
+  const totalPayablePaid = payables.reduce((sum, l) => sum + l.paidAmount, 0);
+  const remainingPayables = payables.reduce((sum, l) => sum + l.remainingAmount, 0);
+
+  const totalReceivableAmount = receivables.reduce((sum, l) => sum + l.amount, 0);
+  const totalReceivablePaid = receivables.reduce((sum, l) => sum + l.paidAmount, 0);
+  const remainingReceivables = receivables.reduce((sum, l) => sum + l.remainingAmount, 0);
+
+  const netLoanPosition = remainingReceivables - remainingPayables;
+
+  const overdueLoans = safeLoans.filter(l => {
+    if (l.status === 'paid') return false;
+    const due = new Date(l.dueDate).getTime();
+    return due < new Date().setHours(0, 0, 0, 0);
+  });
+
   const handleSendMessage = async (customText?: string) => {
     const textToSend = (customText || inputMessage).trim();
     if (!textToSend || isLoading) return;
@@ -138,6 +168,44 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
     setIsLoading(true);
 
     try {
+      const activePayablesList = payables
+        .filter(l => l.status !== 'paid')
+        .map(l => ({
+          person: l.personName,
+          title: l.title,
+          amount: formatCurrency(l.amount, currency, language),
+          paidAmount: formatCurrency(l.paidAmount, currency, language),
+          remainingAmount: formatCurrency(l.remainingAmount, currency, language),
+          dueDate: l.dueDate,
+          status: l.status === 'partial' ? 'Cicilan Sebagian' : 'Belum Dibayar (0%)',
+          contactPhone: l.contactPhone || '-',
+          notes: l.notes || '-',
+        }));
+
+      const activeReceivablesList = receivables
+        .filter(l => l.status !== 'paid')
+        .map(l => ({
+          person: l.personName,
+          title: l.title,
+          amount: formatCurrency(l.amount, currency, language),
+          paidAmount: formatCurrency(l.paidAmount, currency, language),
+          remainingAmount: formatCurrency(l.remainingAmount, currency, language),
+          dueDate: l.dueDate,
+          status: l.status === 'partial' ? 'Diterima Sebagian' : 'Belum Dibayar (0%)',
+          contactPhone: l.contactPhone || '-',
+          notes: l.notes || '-',
+        }));
+
+      const settledLoansList = safeLoans
+        .filter(l => l.status === 'paid' || l.remainingAmount === 0)
+        .map(l => ({
+          type: l.type === 'payable' ? 'Hutang' : 'Piutang',
+          person: l.personName,
+          title: l.title,
+          amount: formatCurrency(l.amount, currency, language),
+          status: 'Lunas 100%',
+        }));
+
       const financialContext = {
         userName: currentUser?.name || 'Pengguna',
         currency,
@@ -147,6 +215,24 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
         netSavings: formatCurrency(netSavings, currency, language),
         savingsRate,
         unpaidBillsCount,
+        // Loans & Debts Context
+        loansSummary: {
+          totalPayables: formatCurrency(totalPayableAmount, currency, language),
+          paidPayables: formatCurrency(totalPayablePaid, currency, language),
+          remainingPayables: formatCurrency(remainingPayables, currency, language),
+          activePayablesCount: activePayablesList.length,
+          activePayablesList,
+
+          totalReceivables: formatCurrency(totalReceivableAmount, currency, language),
+          paidReceivables: formatCurrency(totalReceivablePaid, currency, language),
+          remainingReceivables: formatCurrency(remainingReceivables, currency, language),
+          activeReceivablesCount: activeReceivablesList.length,
+          activeReceivablesList,
+
+          netLoanPosition: `${netLoanPosition >= 0 ? '+' : ''}${formatCurrency(netLoanPosition, currency, language)}`,
+          overdueLoansCount: overdueLoans.length,
+          settledLoansList,
+        },
       };
 
       const response = await fetch('/api/chat', {
@@ -190,7 +276,7 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
       const welcome: ChatMessage = {
         id: 'msg-welcome-new',
         role: 'model',
-        text: `Halo ${currentUser?.name || 'Kak'}! Riwayat percakapan telah dibersihkan. Ada yang bisa saya bantu terkait keuangan Anda hari ini?`,
+        text: `Halo ${currentUser?.name || 'Kak'}! Riwayat percakapan telah dibersihkan. Ada yang bisa saya bantu terkait keuangan, hutang, atau piutang Anda hari ini?`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages([welcome]);
@@ -250,20 +336,22 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
       </div>
 
       {/* Financial Snapshot Bar */}
-      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-5 py-2.5 text-xs dark:border-slate-800/80 dark:bg-slate-850/50">
+      <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-b border-slate-100 bg-slate-50/70 px-5 py-2.5 text-xs dark:border-slate-800/80 dark:bg-slate-850/50">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-slate-500">Saldo:</span>
           <span className="font-bold text-slate-900 dark:text-white">
             {formatCurrency(totalBalance, currency, language)}
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-slate-500">Bulan Ini:</span>
-          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-            +{formatCurrency(monthlyIncome, currency, language)}
+        <div className="flex items-center gap-3 text-[11px]">
+          <span title="Sisa Piutang yang belum Anda tagih / terima" className="flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
+            <span>Piutang:</span>
+            <span>{formatCurrency(remainingReceivables, currency, language)}</span>
           </span>
-          <span className="font-semibold text-rose-600 dark:text-rose-400">
-            -{formatCurrency(monthlyExpense, currency, language)}
+          <span className="text-slate-300 dark:text-slate-700">|</span>
+          <span title="Sisa Hutang yang wajib Anda lunasi" className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
+            <span>Hutang:</span>
+            <span>{formatCurrency(remainingPayables, currency, language)}</span>
           </span>
         </div>
       </div>

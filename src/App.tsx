@@ -22,6 +22,7 @@ import { DashboardView } from './components/DashboardView';
 import { DevPortalView } from './components/DevPortalView';
 import { Header } from './components/Header';
 import { LockScreen } from './components/LockScreen';
+import { LoansView } from './components/LoansView';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ReportsView } from './components/ReportsView';
 import { SecurityView } from './components/SecurityView';
@@ -55,6 +56,7 @@ const AppContent: React.FC = () => {
             {activeView === 'ai' && <AiChatBot isEmbedded={true} />}
             {(activeView === 'auth' || activeView === 'account' || activeView === 'login' || activeView === 'register') && <AuthView />}
             {activeView === 'bills' && <BillsView />}
+            {activeView === 'loans' && <LoansView />}
             {activeView === 'categories' && <CategoriesView />}
             {activeView === 'reports' && <ReportsView />}
             {activeView === 'dev' && (currentUser?.role === 'admin' ? <DevPortalView /> : <DashboardView />)}

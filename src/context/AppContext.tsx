@@ -4,6 +4,7 @@ import {
   INITIAL_ACCOUNTS,
   INITIAL_BILLS,
   INITIAL_CATEGORIES,
+  INITIAL_LOANS,
   INITIAL_TRANSACTIONS,
 } from '../data/initialData';
 import { translations } from '../i18n/translations';
@@ -17,6 +18,10 @@ import {
   Currency,
   ExchangeRateData,
   Language,
+  Loan,
+  LoanPayment,
+  LoanStatus,
+  LoanType,
   SecuritySettings,
   SubscriptionPlan,
   Theme,
@@ -168,6 +173,7 @@ function getInitialUserData(user: UserProfile | null) {
       accounts: INITIAL_ACCOUNTS,
       transactions: INITIAL_TRANSACTIONS,
       bills: INITIAL_BILLS,
+      loans: INITIAL_LOANS,
     };
   }
 
@@ -176,13 +182,15 @@ function getInitialUserData(user: UserProfile | null) {
     const savedAccounts = localStorage.getItem(getUserStorageKey(user.id, 'accounts'));
     const savedTxs = localStorage.getItem(getUserStorageKey(user.id, 'transactions'));
     const savedBills = localStorage.getItem(getUserStorageKey(user.id, 'bills'));
+    const savedLoans = localStorage.getItem(getUserStorageKey(user.id, 'loans'));
 
-    if (savedCategories || savedAccounts || savedTxs || savedBills) {
+    if (savedCategories || savedAccounts || savedTxs || savedBills || savedLoans) {
       return {
         categories: savedCategories ? JSON.parse(savedCategories) : INITIAL_CATEGORIES,
         accounts: savedAccounts ? JSON.parse(savedAccounts) : [],
         transactions: savedTxs ? JSON.parse(savedTxs) : [],
         bills: savedBills ? JSON.parse(savedBills) : [],
+        loans: savedLoans ? JSON.parse(savedLoans) : INITIAL_LOANS,
       };
     }
   } catch (err) {
@@ -200,6 +208,7 @@ function getInitialUserData(user: UserProfile | null) {
       accounts: INITIAL_ACCOUNTS,
       transactions: INITIAL_TRANSACTIONS,
       bills: INITIAL_BILLS,
+      loans: INITIAL_LOANS,
     };
   }
 
@@ -302,6 +311,7 @@ function getInitialUserData(user: UserProfile | null) {
       accounts: budiAccounts,
       transactions: budiTxs,
       bills: budiBills,
+      loans: INITIAL_LOANS.slice(0, 2),
     };
   }
 
@@ -365,6 +375,7 @@ function getInitialUserData(user: UserProfile | null) {
     accounts: starterAccounts,
     transactions: starterTxs,
     bills: [],
+    loans: [],
   };
 }
 
@@ -464,6 +475,7 @@ interface AppContextType {
   accounts: BankAccount[];
   transactions: Transaction[];
   bills: BillReminder[];
+  loans: Loan[];
 
   // Data Actions
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => void;
@@ -482,6 +494,14 @@ interface AppContextType {
   updateBill: (bill: BillReminder) => void;
   deleteBill: (id: string) => void;
   toggleBillPaid: (id: string, createTransaction?: boolean) => void;
+
+  // Loans Actions (Hutang & Piutang)
+  addLoan: (loan: Omit<Loan, 'id' | 'paidAmount' | 'remainingAmount' | 'status' | 'payments' | 'createdAt'>) => void;
+  updateLoan: (loan: Loan) => void;
+  deleteLoan: (id: string) => void;
+  addLoanPayment: (loanId: string, payment: { amount: number; paymentDate?: string; accountId?: string; notes?: string; recordTransaction?: boolean }) => void;
+  settleLoanInFull: (loanId: string, accountId?: string, notes?: string, recordTransaction?: boolean) => void;
+  deleteLoanPayment: (loanId: string, paymentId: string) => void;
 
   // Security & 2FA & Vault
   security: SecuritySettings & { isTwoFactorEnabled: boolean; totpSecret: string };
@@ -636,6 +656,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [accounts, setAccounts] = useState<BankAccount[]>(initialUserData.accounts);
   const [transactions, setTransactions] = useState<Transaction[]>(initialUserData.transactions);
   const [bills, setBills] = useState<BillReminder[]>(initialUserData.bills);
+  const [loans, setLoans] = useState<Loan[]>(initialUserData.loans || INITIAL_LOANS);
 
   // Switch / Load isolated data when currentUser changes
   const prevUserRef = useRef<string | null>(currentUser?.id || null);
@@ -647,6 +668,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAccounts(data.accounts);
       setTransactions(data.transactions);
       setBills(data.bills);
+      setLoans(data.loans || []);
       prevUserRef.current = currentUser.id;
 
       // Strict RBAC: If logged-in user is not admin and is trying to view Dev Portal, redirect immediately
@@ -846,6 +868,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('finvault_bills', JSON.stringify(bills));
   }, [bills]);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      localStorage.setItem(getUserStorageKey(currentUser.id, 'loans'), JSON.stringify(loans));
+    }
+  }, [loans, currentUser?.id]);
+
+  useEffect(() => {
+    localStorage.setItem('finvault_loans', JSON.stringify(loans));
+  }, [loans]);
 
   useEffect(() => {
     localStorage.setItem('finvault_security', JSON.stringify(security));
@@ -1756,6 +1788,199 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Loans Actions (Hutang & Piutang)
+  const addLoan = (
+    loanData: Omit<Loan, 'id' | 'paidAmount' | 'remainingAmount' | 'status' | 'payments' | 'createdAt'>
+  ) => {
+    const newLoan: Loan = {
+      ...loanData,
+      id: 'loan-' + Date.now(),
+      paidAmount: 0,
+      remainingAmount: loanData.amount,
+      status: 'unpaid',
+      payments: [],
+      createdAt: Date.now(),
+    };
+    setLoans(prev => [newLoan, ...prev]);
+    addNotification(
+      'success',
+      loanData.type === 'payable' ? 'Hutang Baru Dicatat' : 'Piutang Baru Dicatat',
+      `${loanData.title} (${loanData.personName}) berhasil disimpan. Jatuh tempo: ${loanData.dueDate}.`
+    );
+  };
+
+  const updateLoan = (loan: Loan) => {
+    setLoans(prev => prev.map(l => (l.id === loan.id ? loan : l)));
+    addNotification('info', 'Data Diperbarui', `Informasi ${loan.title} berhasil diperbarui.`);
+  };
+
+  const deleteLoan = (id: string) => {
+    const l = loans.find(x => x.id === id);
+    setLoans(prev => prev.filter(x => x.id !== id));
+    if (l) addNotification('warning', 'Data Dihapus', `${l.title} (${l.personName}) telah dihapus.`);
+  };
+
+  const addLoanPayment = (
+    loanId: string,
+    paymentData: {
+      amount: number;
+      paymentDate?: string;
+      accountId?: string;
+      notes?: string;
+      recordTransaction?: boolean;
+    }
+  ) => {
+    const targetLoan = loans.find(l => l.id === loanId);
+    if (!targetLoan) {
+      addNotification('error', 'Gagal Memproses', 'Data hutang/piutang tidak ditemukan.');
+      return;
+    }
+
+    const paymentAmount = Number(paymentData.amount);
+    if (isNaN(paymentAmount) || paymentAmount <= 0) {
+      addNotification('error', 'Nominal Tidak Valid', 'Masukkan nominal pembayaran yang valid.');
+      return;
+    }
+
+    if (paymentAmount > targetLoan.remainingAmount) {
+      addNotification(
+        'error',
+        'Nominal Melebihi Sisa',
+        `Nominal pembayaran (Rp ${paymentAmount.toLocaleString('id-ID')}) melebihi sisa tagihan (Rp ${targetLoan.remainingAmount.toLocaleString('id-ID')}).`
+      );
+      return;
+    }
+
+    const selectedAccount = accounts.find(a => a.id === paymentData.accountId) || accounts[0];
+    const newPayment: LoanPayment = {
+      id: 'pmt-' + Date.now(),
+      loanId,
+      amount: paymentAmount,
+      paymentDate: paymentData.paymentDate || new Date().toISOString().slice(0, 10),
+      accountId: paymentData.accountId || selectedAccount?.id,
+      accountName: selectedAccount?.name || 'Kas / Rekening',
+      notes:
+        paymentData.notes ||
+        (targetLoan.type === 'payable'
+          ? 'Pembayaran angsuran hutang'
+          : 'Penerimaan pembayaran piutang'),
+      createdAt: Date.now(),
+    };
+
+    const newPaidAmount = targetLoan.paidAmount + paymentAmount;
+    const newRemainingAmount = Math.max(0, targetLoan.amount - newPaidAmount);
+    const newStatus: LoanStatus = newRemainingAmount === 0 ? 'paid' : 'partial';
+    const isFullSettlement = newRemainingAmount === 0;
+
+    setLoans(prev =>
+      prev.map(l => {
+        if (l.id !== loanId) return l;
+        return {
+          ...l,
+          paidAmount: newPaidAmount,
+          remainingAmount: newRemainingAmount,
+          status: newStatus,
+          settledAt: isFullSettlement
+            ? paymentData.paymentDate || new Date().toISOString().slice(0, 10)
+            : l.settledAt,
+          payments: [newPayment, ...l.payments],
+        };
+      })
+    );
+
+    // If auto-recording to transaction ledger & modifying account balance
+    if (paymentData.recordTransaction !== false && selectedAccount) {
+      const isPayable = targetLoan.type === 'payable';
+      addTransaction({
+        title: isPayable
+          ? `Bayar Hutang: ${targetLoan.personName} (${targetLoan.title})`
+          : `Terima Piutang: ${targetLoan.personName} (${targetLoan.title})`,
+        amount: paymentAmount,
+        type: isPayable ? 'expense' : 'income',
+        categoryId: isPayable ? 'cat-bills' : 'cat-freelance',
+        accountId: selectedAccount.id,
+        date: paymentData.paymentDate || new Date().toISOString().slice(0, 10),
+        time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        notes:
+          paymentData.notes ||
+          `Pembayaran ${isPayable ? 'hutang ke' : 'piutang dari'} ${targetLoan.personName} (${isFullSettlement ? 'Lunas 100%' : 'Cicilan Parsial'})`,
+      });
+    }
+
+    if (isFullSettlement) {
+      confetti({
+        particleCount: 90,
+        spread: 70,
+        origin: { y: 0.65 },
+      });
+      addNotification(
+        'success',
+        targetLoan.type === 'payable' ? 'Hutang LUNAS Sepenuhnya! 🎉' : 'Piutang LUNAS Diterima! 🎉',
+        `${targetLoan.title} (${targetLoan.personName}) telah lunas 100%. Saldo sisa menjadi Rp 0.`
+      );
+    } else {
+      addNotification(
+        'success',
+        'Pembayaran Sebagian Berhasil 💵',
+        `Pembayaran Rp ${paymentAmount.toLocaleString('id-ID')} dicatat. Sisa saldo: Rp ${newRemainingAmount.toLocaleString('id-ID')}. Status: Sebagian (Partial).`
+      );
+    }
+  };
+
+  const settleLoanInFull = (
+    loanId: string,
+    accountId?: string,
+    notes?: string,
+    recordTransaction: boolean = true
+  ) => {
+    const targetLoan = loans.find(l => l.id === loanId);
+    if (!targetLoan) return;
+    if (targetLoan.remainingAmount <= 0) {
+      addNotification('info', 'Sudah Lunas', 'Data hutang/piutang ini sudah berstatus lunas.');
+      return;
+    }
+
+    addLoanPayment(loanId, {
+      amount: targetLoan.remainingAmount,
+      paymentDate: new Date().toISOString().slice(0, 10),
+      accountId,
+      notes: notes || `Pelunasan Penuh 100% (${targetLoan.type === 'payable' ? 'Hutang' : 'Piutang'})`,
+      recordTransaction,
+    });
+  };
+
+  const deleteLoanPayment = (loanId: string, paymentId: string) => {
+    const targetLoan = loans.find(l => l.id === loanId);
+    if (!targetLoan) return;
+    const pmt = targetLoan.payments.find(p => p.id === paymentId);
+    if (!pmt) return;
+
+    const updatedPayments = targetLoan.payments.filter(p => p.id !== paymentId);
+    const updatedPaidAmount = Math.max(0, targetLoan.paidAmount - pmt.amount);
+    const updatedRemainingAmount = targetLoan.amount - updatedPaidAmount;
+    const updatedStatus: LoanStatus = updatedPaidAmount === 0 ? 'unpaid' : 'partial';
+
+    setLoans(prev =>
+      prev.map(l => {
+        if (l.id !== loanId) return l;
+        return {
+          ...l,
+          paidAmount: updatedPaidAmount,
+          remainingAmount: updatedRemainingAmount,
+          status: updatedStatus,
+          settledAt: undefined,
+          payments: updatedPayments,
+        };
+      })
+    );
+
+    addNotification(
+      'warning',
+      'Pembayaran Dibatalkan',
+      `Pembayaran Rp ${pmt.amount.toLocaleString('id-ID')} dihapus. Sisa saldo disesuaikan menjadi Rp ${updatedRemainingAmount.toLocaleString('id-ID')}.`
+    );
+  };
+
   // Security Functions
   const setMasterPassphrase = async (passphrase: string): Promise<boolean> => {
     try {
@@ -2024,6 +2249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         accounts,
         transactions,
         bills,
+        loans,
         addTransaction,
         updateTransaction,
         deleteTransaction,
@@ -2037,6 +2263,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateBill,
         deleteBill,
         toggleBillPaid,
+        addLoan,
+        updateLoan,
+        deleteLoan,
+        addLoanPayment,
+        settleLoanInFull,
+        deleteLoanPayment,
         security: normalizedSecurity,
         setMasterPassphrase,
         enable2FA,

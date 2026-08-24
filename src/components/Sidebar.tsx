@@ -7,6 +7,7 @@ import {
   Crown,
   FileSpreadsheet,
   Grid,
+  HandCoins,
   HelpCircle,
   LayoutDashboard,
   Lock,
@@ -26,6 +27,7 @@ export const Sidebar: React.FC = () => {
     setActiveView,
     t,
     bills,
+    loans,
     security,
     setIsOnboardingOpen,
     currentUser,
@@ -34,6 +36,7 @@ export const Sidebar: React.FC = () => {
   } = useApp();
 
   const unpaidBillsCount = bills.filter(b => !b.isPaid).length;
+  const activeLoansCount = loans ? loans.filter(l => l.status !== 'paid').length : 0;
   const unreadMessagesCount = businessMessages.filter(m => !m.isRead).length;
   const trialInfo = calculateTrialStatus(currentUser);
   const isAdmin = currentUser?.role === 'admin';
@@ -41,6 +44,13 @@ export const Sidebar: React.FC = () => {
   const navItems = [
     { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
     { id: 'transactions', label: t('nav_transactions'), icon: Receipt },
+    {
+      id: 'loans',
+      label: t('nav_loans') || 'Hutang & Piutang',
+      icon: HandCoins,
+      badge: activeLoansCount > 0 ? `${activeLoansCount}` : undefined,
+      badgeColor: 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 font-medium',
+    },
     {
       id: 'ai',
       label: 'BukuKas AI Chat',

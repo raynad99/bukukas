@@ -5,6 +5,7 @@ import {
   Crown,
   FileSpreadsheet,
   Grid,
+  HandCoins,
   LayoutDashboard,
   Mail,
   MoreHorizontal,
@@ -18,14 +19,16 @@ import {
 import { useApp } from '../context/AppContext';
 
 export const BottomNav: React.FC = () => {
-  const { activeView, setActiveView, t, bills, setIsAddTransactionOpen, currentUser, businessMessages } = useApp();
+  const { activeView, setActiveView, t, bills, loans, setIsAddTransactionOpen, currentUser, businessMessages } = useApp();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
   const unpaidCount = bills.filter(b => !b.isPaid).length;
+  const activeLoansCount = loans ? loans.filter(l => l.status !== 'paid').length : 0;
   const unreadMessagesCount = businessMessages.filter(m => !m.isRead).length;
   const isAdmin = currentUser?.role === 'admin';
 
   const moreItems = [
+    { id: 'loans', label: t('nav_loans') || 'Hutang & Piutang', icon: HandCoins, badge: activeLoansCount > 0 ? `${activeLoansCount}` : undefined },
     { id: 'ai', label: 'BukuKas AI', icon: Sparkles, badge: 'AI' },
     ...(isAdmin
       ? [{ id: 'dev', label: 'Portal Dev', icon: Crown, badge: unreadMessagesCount > 0 ? `${unreadMessagesCount}` : undefined }]

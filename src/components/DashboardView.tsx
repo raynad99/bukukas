@@ -12,6 +12,7 @@ import {
   Clock,
   DollarSign,
   Globe2,
+  HandCoins,
   HeartPulse,
   Landmark,
   Layers,
@@ -49,6 +50,7 @@ export const DashboardView: React.FC = () => {
     accounts,
     categories,
     bills,
+    loans,
     currency,
     setCurrency,
     language,
@@ -523,6 +525,61 @@ export const DashboardView: React.FC = () => {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Active Loans & Receivables Summary Banner */}
+      {loans && loans.filter(l => l.status !== 'paid').length > 0 && (
+        <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-rose-50/40 via-indigo-50/30 to-emerald-50/40 p-4 shadow-xs dark:border-slate-800 dark:from-slate-900/60 dark:to-slate-900/60">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-rose-500 to-indigo-600 text-white shadow-xs">
+                <HandCoins className="h-4 w-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                  Ringkasan Hutang & Piutang Aktif
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {loans.filter(l => l.type === 'payable' && l.status !== 'paid').length} Hutang Belum Lunas •{' '}
+                  {loans.filter(l => l.type === 'receivable' && l.status !== 'paid').length} Piutang Belum Ditagih
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-left sm:text-right">
+                <span className="text-[10px] text-slate-400 block">Sisa Hutang:</span>
+                <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                  {formatCurrency(
+                    loans
+                      .filter(l => l.type === 'payable')
+                      .reduce((sum, l) => sum + l.remainingAmount, 0),
+                    currency,
+                    language
+                  )}
+                </span>
+              </div>
+              <div className="text-left sm:text-right">
+                <span className="text-[10px] text-slate-400 block">Sisa Piutang:</span>
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(
+                    loans
+                      .filter(l => l.type === 'receivable')
+                      .reduce((sum, l) => sum + l.remainingAmount, 0),
+                    currency,
+                    language
+                  )}
+                </span>
+              </div>
+              <button
+                onClick={() => setActiveView('loans')}
+                className="rounded-xl bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+              >
+                Buka Modul
+              </button>
+            </div>
           </div>
         </div>
       )}

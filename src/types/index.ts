@@ -174,3 +174,38 @@ export interface CryptoPaymentRecord {
   notes?: string;
 }
 
+export type LoanType = 'payable' | 'receivable'; // 'payable' = Hutang (Kewajiban), 'receivable' = Piutang (Aset / Hak Tagih)
+export type LoanStatus = 'unpaid' | 'partial' | 'paid';
+
+export interface LoanPayment {
+  id: string;
+  loanId: string;
+  amount: number;
+  paymentDate: string; // YYYY-MM-DD
+  accountId?: string;
+  accountName?: string;
+  notes?: string;
+  createdAt: number;
+}
+
+export interface Loan {
+  id: string;
+  type: LoanType; // 'payable' = Hutang, 'receivable' = Piutang
+  personName: string; // Nama Peminjam (Debitur) / Pemberi Pinjaman (Kreditor)
+  contactPhone?: string; // Nomor Kontak / WhatsApp
+  title: string; // Keterangan / Keperluan Pinjaman
+  amount: number; // Total Nominal Pinjaman Pokok
+  currency?: Currency;
+  startDate: string; // YYYY-MM-DD
+  dueDate: string; // Tanggal Jatuh Tempo (YYYY-MM-DD)
+  paidAmount: number; // Total yang sudah dicicil/dilunasi
+  remainingAmount: number; // Sisa saldo (amount - paidAmount)
+  status: LoanStatus; // 'unpaid' | 'partial' | 'paid'
+  accountId?: string; // Rekening kas/bank pencairan/pengeluaran default
+  reminderDaysBefore?: number;
+  notes?: string;
+  payments: LoanPayment[]; // Riwayat pembayaran cicilan / pelunasan
+  createdAt: number;
+  settledAt?: string; // Tanggal pelunasan penuh jika sudah lunas
+}
+

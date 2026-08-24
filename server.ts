@@ -17,9 +17,10 @@ function getAiClient() {
 
 // Helper for generating AI content with multi-model fallback and 503 retry resilience
 const GEMINI_MODELS_POOL = [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash-lite",
   "gemini-3.7-flash",
+  "gemini-flash-latest",
+  "gemini-3.1-flash-lite",
+  "gemini-3.1-pro-preview",
 ];
 
 async function generateWithGeminiFailover(
@@ -305,26 +306,71 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
         return res.status(400).json({ error: "Pesan tidak boleh kosong." });
       }
 
+      const ls = financialContext?.loansSummary || {};
+      const payablesListStr = Array.isArray(ls.activePayablesList) && ls.activePayablesList.length > 0
+        ? ls.activePayablesList.map((p: any, i: number) => 
+            `  ${i + 1}. ${p.person} (${p.title}): Pokok ${p.amount} | Sisa Wajib Dibayar: ${p.remainingAmount} | Terbayar: ${p.paidAmount} | Status: ${p.status} | Jatuh Tempo: ${p.dueDate} | Kontak: ${p.contactPhone || '-'}`
+          ).join('\n')
+        : '  (Tidak ada hutang aktif)';
+
+      const receivablesListStr = Array.isArray(ls.activeReceivablesList) && ls.activeReceivablesList.length > 0
+        ? ls.activeReceivablesList.map((r: any, i: number) => 
+            `  ${i + 1}. ${r.person} (${r.title}): Pokok ${r.amount} | Sisa Belum Ditagih/Diterima: ${r.remainingAmount} | Diterima: ${r.paidAmount} | Status: ${r.status} | Jatuh Tempo: ${r.dueDate} | Kontak: ${r.contactPhone || '-'}`
+          ).join('\n')
+        : '  (Tidak ada piutang aktif)';
+
+      const settledListStr = Array.isArray(ls.settledLoansList) && ls.settledLoansList.length > 0
+        ? ls.settledLoansList.map((s: any, i: number) => 
+            `  ${i + 1}. [${s.type}] ${s.person} - ${s.title}: ${s.amount} (${s.status})`
+          ).join('\n')
+        : '  (Belum ada riwayat pelunasan)';
+
       let contextDescription = "";
       if (financialContext) {
         contextDescription = `
-Konteks Finansial Pengguna BukuKas Pro Saat Ini:
+KONTEKS FINANSIAL REAL-TIME PENGGUNA BUKUKAS PRO:
+- Nama Pengguna: ${financialContext.userName || 'Pengguna BukuKas Pro'}
 - Mata Uang Utama: ${financialContext.currency || 'IDR'}
-- Total Saldo: ${financialContext.totalBalance || '0'}
+- Total Saldo di Seluruh Rekening: ${financialContext.totalBalance || '0'}
 - Pemasukan Bulan Ini: ${financialContext.monthlyIncome || '0'}
 - Pengeluaran Bulan Ini: ${financialContext.monthlyExpense || '0'}
 - Tabungan Bersih: ${financialContext.netSavings || '0'} (${financialContext.savingsRate || 0}% rasio tabungan)
-- Tagihan Belum Lunas: ${financialContext.unpaidBillsCount || 0} tagihan
-- Nama Pengguna: ${financialContext.userName || 'Pengguna BukuKas Pro'}
+- Tagihan Rutin Belum Lunas: ${financialContext.unpaidBillsCount || 0} tagihan
+
+RINGKASAN MODUL HUTANG & PIUTANG (LIABILITIES & ASSETS):
+1. PIUTANG (RECEIVABLES / UANG PENGGUNA YANG DIPINJAM ORANG LAIN / HAK TAGIH):
+   - Total Pokok Piutang: ${ls.totalReceivables || '0'}
+   - Total Sudah Diterima/Dicicil: ${ls.paidReceivables || '0'}
+   - Sisa Saldo Piutang yang Belum Ditagih/Diterima: ${ls.remainingReceivables || '0'}
+   - Jumlah Debitur/Peminjam Aktif: ${ls.activeReceivablesCount || 0} orang/entitas
+   - Rincian Daftar Piutang Aktif:
+${receivablesListStr}
+
+2. HUTANG (PAYABLES / KEWAJIBAN PENGGUNA KEPADA PIHAK LAIN):
+   - Total Pokok Hutang: ${ls.totalPayables || '0'}
+   - Total Sudah Dilunasi/Dicicil: ${ls.paidPayables || '0'}
+   - Sisa Saldo Hutang yang Wajib Dibayar: ${ls.remainingPayables || '0'}
+   - Jumlah Kreditor/Hutang Aktif: ${ls.activePayablesCount || 0} entitas
+   - Rincian Daftar Hutang Aktif:
+${payablesListStr}
+
+3. POSISI BERSIH PINJAMAN & STATUS PELUNASAN:
+   - Posisi Bersih (Sisa Piutang - Sisa Hutang): ${ls.netLoanPosition || '0'}
+   - Pinjaman Melewati Jatuh Tempo (Overdue): ${ls.overdueLoansCount || 0}
+   - Riwayat Lunas (100%):
+${settledListStr}
 `;
       }
 
       const systemInstruction = `Anda adalah "BukuKas AI Assistant" — konsultan keuangan dan penasihat pembukuan cerdas pribadi & UMKM resmi dari aplikasi BukuKas Pro.
 Karakter Anda:
-- Sangat ramah, bijak, solutif, analitis, dan profesional.
-- Ahli dalam manajemen arus kas, rumus budgeting (50/30/20, amplop, zero-based), investasi pemula, pemantauan tagihan, dan konversi multi-mata uang (IDR, NZD, USD, SGD, AUD, EUR, GBP, JPY, MYR, HKD, TWD, BGN, KRW).
-- Berikan saran yang praktis, terstruktur dengan poin-poin jelas atau angka yang mudah dipahami.
-- Gunakan Bahasa Indonesia yang luwes, profesional, dan menyenangkan (atau gunakan bahasa yang sama dengan pengguna jika pengguna menyapa dalam bahasa lain).
+- Sangat ramah, bijak, solutif, analitis, akurat secara angka, dan profesional.
+- Ahli dalam manajemen arus kas, pencatatan Hutang & Piutang (Liabilities & Assets), rumus budgeting (50/30/20, amplop, zero-based), pemantauan tagihan, dan konversi multi-mata uang.
+- ATURAN KHUSUS HUTANG & PIUTANG:
+  * "Piutang" (Receivables) = Uang milik pengguna yang dipinjam oleh orang/pihak lain (Hak tagih). Jika ditanya "total piutang", sebutkan total sisa piutang yang belum diterima (${ls.remainingReceivables || '0'}), rincikan nama-nama peminjamnya, nominal pokok, sisa saldo, dan tanggal jatuh temponya dengan rapi dan jelas.
+  * "Hutang" (Payables) = Kewajiban uang yang dipinjam pengguna dari pihak lain. Jika ditanya "total hutang", sebutkan total sisa hutang yang wajib dibayar (${ls.remainingPayables || '0'}), rincikan nama pemberi pinjaman/bank, pokok, sisa saldo, dan jatuh temponya.
+  * Tampilkan angka dan nama secara presisi sesuai data real-time pada konteks tanpa mengarang.
+- Format teks menggunakan Markdown yang rapi (bold, bullet points, emoji yang proporsional).
 ${contextDescription}`;
 
       // Build contents history
@@ -368,7 +414,99 @@ ${contextDescription}`;
       const lowerQuery = message.toLowerCase();
       let fallbackReply = "";
 
-      if (lowerQuery.includes("50/30/20") || lowerQuery.includes("budget") || lowerQuery.includes("anggaran")) {
+      // Intent 1: Pertanyaan seputar PIUTANG (Receivables)
+      if (
+        lowerQuery.includes("piutang") ||
+        lowerQuery.includes("receivable") ||
+        lowerQuery.includes("siapa yang pinjam") ||
+        lowerQuery.includes("siapa yang ngutang") ||
+        lowerQuery.includes("orang pinjam") ||
+        lowerQuery.includes("hak tagih") ||
+        lowerQuery.includes("tagih")
+      ) {
+        const activeReceivables = Array.isArray(ls.activeReceivablesList) ? ls.activeReceivablesList : [];
+        let listMarkdown = "";
+        if (activeReceivables.length > 0) {
+          listMarkdown = activeReceivables.map((r: any, idx: number) => 
+            `${idx + 1}. **${r.person}** — *${r.title}*\n   - **Sisa Belum Diterima**: \`${r.remainingAmount}\` (dari total pokok ${r.amount})\n   - **Sudah Masuk**: ${r.paidAmount}\n   - **Status**: ${r.status}\n   - **Jatuh Tempo**: ${r.dueDate}\n   - **Kontak**: ${r.contactPhone || '-'}`
+          ).join('\n\n');
+        } else {
+          listMarkdown = "_Tidak ada piutang aktif saat ini. Semua piutang telah lunas! 🎉_";
+        }
+
+        fallbackReply = `### 💰 Ringkasan & Total Piutang Anda (Hak Tagih)
+
+Berikut adalah status lengkap piutang uang Anda yang dipinjam oleh pihak lain:
+
+- **Total Sisa Piutang yang Belum Ditagih/Diterima**: **${ls.remainingReceivables || 'Rp 0'}**
+- **Total Pokok Piutang**: ${ls.totalReceivables || 'Rp 0'}
+- **Total yang Sudah Diterima/Dicicil**: ${ls.paidReceivables || 'Rp 0'}
+- **Jumlah Peminjam (Debitur) Aktif**: ${ls.activeReceivablesCount || 0} orang/entitas
+
+---
+
+#### 📋 Rincian Peminjam & Jadwal Jatuh Tempo:
+${listMarkdown}
+
+💡 **Tips Penagihan**: Anda dapat menggunakan fitur **Kirim Pengingat WhatsApp** langsung dari menu **Hutang & Piutang** untuk mengingatkan peminjam secara sopan dan profesional sebelum jatuh tempo tiba.`;
+      } 
+      // Intent 2: Pertanyaan seputar HUTANG (Payables)
+      else if (
+        lowerQuery.includes("hutang") ||
+        lowerQuery.includes("utang") ||
+        lowerQuery.includes("payable") ||
+        lowerQuery.includes("kewajiban") ||
+        lowerQuery.includes("cicilan") ||
+        lowerQuery.includes("bayar hutang")
+      ) {
+        const activePayables = Array.isArray(ls.activePayablesList) ? ls.activePayablesList : [];
+        let listMarkdown = "";
+        if (activePayables.length > 0) {
+          listMarkdown = activePayables.map((p: any, idx: number) => 
+            `${idx + 1}. **${p.person}** — *${p.title}*\n   - **Sisa Wajib Dibayar**: \`${p.remainingAmount}\` (dari total pokok ${p.amount})\n   - **Sudah Dilunasi/Dicicil**: ${p.paidAmount}\n   - **Status**: ${p.status}\n   - **Jatuh Tempo**: ${p.dueDate}`
+          ).join('\n\n');
+        } else {
+          listMarkdown = "_Alhamdulillah, Anda tidak memiliki hutang aktif saat ini! 🎉_";
+        }
+
+        fallbackReply = `### 💳 Ringkasan & Total Kewajiban Hutang Anda
+
+Berikut adalah status seluruh pinjaman yang wajib Anda lunasi:
+
+- **Total Sisa Saldo Hutang Wajib Dibayar**: **${ls.remainingPayables || 'Rp 0'}**
+- **Total Pokok Pinjaman**: ${ls.totalPayables || 'Rp 0'}
+- **Total yang Sudah Dicicil**: ${ls.paidPayables || 'Rp 0'}
+- **Jumlah Pinjaman Aktif**: ${ls.activePayablesCount || 0} pinjaman
+
+---
+
+#### 📋 Rincian Hutang & Jadwal Jatuh Tempo:
+${listMarkdown}
+
+💡 **Strategi Pelunasan**: Prioritaskan melunasi pinjaman dengan jatuh tempo terdekat atau nominal terkecil lebih dahulu (*Metode Snowball*) untuk meringankan beban cashflow bulanan.`;
+      }
+      // Intent 3: Rekap gabungan Hutang & Piutang / Pinjaman
+      else if (
+        lowerQuery.includes("pinjaman") ||
+        lowerQuery.includes("posisi bersih") ||
+        lowerQuery.includes("rekap pinjaman") ||
+        lowerQuery.includes("debitur") ||
+        lowerQuery.includes("kreditor")
+      ) {
+        fallbackReply = `### ⚖️ Ikhtisar Portofolio Hutang & Piutang
+
+Berikut adalah perbandingan posisi kewajiban vs hak tagih Anda:
+
+- 💰 **Sisa Piutang (Uang Anda di Luar)**: **${ls.remainingReceivables || 'Rp 0'}** (${ls.activeReceivablesCount || 0} debitur)
+- 💳 **Sisa Hutang (Kewajiban Anda)**: **${ls.remainingPayables || 'Rp 0'}** (${ls.activePayablesCount || 0} pinjaman)
+- 📊 **Posisi Bersih (Net Loan Position)**: **${ls.netLoanPosition || 'Rp 0'}**
+
+${Number(ls.overdueLoansCount || 0) > 0 ? `⚠️ **Perhatian**: Terdapat ${ls.overdueLoansCount} catatan pinjaman yang telah melewati jatuh tempo!` : '✅ Tidak ada pinjaman yang jatuh tempo terlambat.'}
+
+Buka menu **Hutang & Piutang** di navigasi untuk mencatat pembayaran parsial, pelunasan penuh, atau menambah data pinjaman baru.`;
+      }
+      // Intent 4: Budgeting 50/30/20
+      else if (lowerQuery.includes("50/30/20") || lowerQuery.includes("budget") || lowerQuery.includes("anggaran")) {
         fallbackReply = `### 💡 Panduan Budgeting 50/30/20 untuk Keuangan Anda
 
 Berdasarkan data keuangan Anda (${financialContext?.totalBalance ? `Total Saldo: ${financialContext.totalBalance}` : 'Bulan Ini'}):
@@ -377,38 +515,48 @@ Berdasarkan data keuangan Anda (${financialContext?.totalBalance ? `Total Saldo:
    - Prioritaskan sewa/tempat tinggal, listrik/air, belanja dapur, dan tagihan wajib (${financialContext?.unpaidBillsCount || 0} tagihan aktif).
 2. **30% Keinginan (Wants)**
    - Alokasikan untuk hiburan, makan di luar, belanja gaya hidup, dan langganan digital.
-3. **20% Tabungan & Investasi (Savings & Debt)**
+3. **20% Tabungan, Hutang & Investasi (Savings & Debt)**
    - Saat ini rasio tabungan Anda berada di kisaran **${financialContext?.savingsRate || 0}%** (Tabungan Bersih: ${financialContext?.netSavings || 'Rp 0'}).
-   - Targetkan menyisihkan dana darurat minimal 3–6 bulan pengeluaran rutin.`;
-      } else if (lowerQuery.includes("analisis") || lowerQuery.includes("kesehatan") || lowerQuery.includes("evaluasi")) {
-        fallbackReply = `### 📊 Analisis Kesehatan Arus Kas Anda
+   - Alokasikan sebagian porsi 20% ini untuk mempercepat pembayaran sisa hutang Anda (${ls.remainingPayables || 'Rp 0'}).`;
+      } 
+      // Intent 5: Analisis Kesehatan Arus Kas Lengkap
+      else if (lowerQuery.includes("analisis") || lowerQuery.includes("kesehatan") || lowerQuery.includes("evaluasi")) {
+        fallbackReply = `### 📊 Analisis Kesehatan Finansial & Arus Kas
 
 Berikut adalah evaluasi ringkas catatan finansial Anda:
 - **Total Saldo Seluruh Rekening**: ${financialContext?.totalBalance || '-'}
 - **Pemasukan Bulan Ini**: ${financialContext?.monthlyIncome || '-'}
 - **Pengeluaran Bulan Ini**: ${financialContext?.monthlyExpense || '-'}
 - **Surplus / Tabungan Bersih**: ${financialContext?.netSavings || '-'} (${financialContext?.savingsRate || 0}%)
-- **Status Tagihan**: ${financialContext?.unpaidBillsCount ? `${financialContext.unpaidBillsCount} tagihan belum lunas` : 'Semua tagihan lunas! 🎉'}
+- **Status Tagihan Rutin**: ${financialContext?.unpaidBillsCount ? `${financialContext.unpaidBillsCount} tagihan belum lunas` : 'Semua tagihan lunas! 🎉'}
+- **Hak Piutang di Luar**: ${ls.remainingReceivables || 'Rp 0'}
+- **Kewajiban Hutang**: ${ls.remainingPayables || 'Rp 0'}
 
 **Rekomendasi:**
-- Pantau kategori pengeluaran tertinggi Anda dan tetapkan batas maksimal per kategori di menu **Kategori**.
-- Pastikan tagihan jatuh tempo dibayar tepat waktu untuk menghindari denda.`;
-      } else if (lowerQuery.includes("valas") || lowerQuery.includes("kurs") || lowerQuery.includes("mata uang") || lowerQuery.includes("nzd") || lowerQuery.includes("usd")) {
+1. Pertahankan rasio tabungan di atas 20% untuk memperkuat dana darurat.
+2. Segera follow up penagihan sisa piutang ${ls.remainingReceivables || 'Rp 0'} kepada peminjam agar arus kas masuk lebih cepat.
+3. Alokasikan surplus bulanan untuk mengangsur sisa hutang ${ls.remainingPayables || 'Rp 0'} sebelum jatuh tempo.`;
+      } 
+      // Intent 6: Valas & Kurs
+      else if (lowerQuery.includes("valas") || lowerQuery.includes("kurs") || lowerQuery.includes("mata uang") || lowerQuery.includes("nzd") || lowerQuery.includes("usd")) {
         fallbackReply = `### 💱 Tips Manajemen Valuta Asing (Multi-Currency)
 
 1. **Pencatatan Berkelanjutan**: Selalu catat transaksi valas sesuai nominal aslinya (misal NZD, USD, SGD, HKD, TWD).
 2. **Live Conversion**: BukuKas Pro secara otomatis mengonversi seluruh transaksi ke mata uang utama (${financialContext?.currency || 'IDR'}) dengan kurs live real-time.
 3. **Lindungi Fluktuasi**: Saat bertransaksi antar-mata uang, periksa tab Kurs Valas di menu atas untuk melihat selisih nilai tukar harian.`;
-      } else {
+      } 
+      // Default Greeting / Menu
+      else {
         fallbackReply = `Halo ${financialContext?.userName || 'Kak'}! 👋
 
-Terima kasih atas pertanyaannya. Sebagai asisten pembukuan BukuKas Pro, berikut beberapa hal yang dapat saya bantu:
+Terima kasih atas pertanyaannya. Sebagai asisten pembukuan cerdas BukuKas Pro, berikut beberapa hal yang dapat saya bantu:
+- 💰 **Cek Total Piutang**: Mengetahui sisa piutang Anda (**${ls.remainingReceivables || 'Rp 0'}**), daftar debitur, dan jatuh tempo.
+- 💳 **Cek Status Hutang**: Rekap sisa kewajiban hutang (**${ls.remainingPayables || 'Rp 0'}**) dan rencana cicilan.
 - 📊 **Analisis Arus Kas**: Evaluasi rasio tabungan (${financialContext?.savingsRate || 0}%) dan pola pengeluaran.
-- 💡 **Rekomendasi Budgeting**: Alokasi anggaran 50/30/20 berdasarkan saldo ${financialContext?.totalBalance || 'Anda'}.
-- 💱 **Multi Mata Uang**: Panduan kurs valuta asing (IDR, NZD, USD, SGD, HKD, TWD, dll).
-- 📅 **Manajemen Tagihan**: Pemantauan jadwal jatuh tempo ${financialContext?.unpaidBillsCount || 0} tagihan belum dibayar.
+- 💡 **Rekomendasi Budgeting**: Alokasi anggaran 50/30/20 dan strategi cashflow.
+- 📅 **Manajemen Tagihan**: Pemantauan ${financialContext?.unpaidBillsCount || 0} tagihan belum dibayar.
 
-Silakan pilih atau tanyakan topik spesifik yang ingin Anda diskusikan!`;
+Silakan pilih atau ketikkan pertanyaan finansial yang ingin Anda ketahui!`;
       }
 
       return res.json({
@@ -420,7 +568,7 @@ Silakan pilih atau tanyakan topik spesifik yang ingin Anda diskusikan!`;
       console.error("AI Chatbot Fallback Handled:", err);
       return res.json({
         success: true,
-        reply: "Halo! Saya siap membantu Anda menganalisis keuangan, tagihan, dan perencanaan anggaran. Silakan ketikkan pertanyaan finansial Anda.",
+        reply: "Halo! Saya siap membantu Anda menganalisis keuangan, hutang, piutang, dan perencanaan anggaran. Silakan ketikkan pertanyaan finansial Anda.",
         model: "bukukas-offline-agent",
       });
     }

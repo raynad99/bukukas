@@ -68,7 +68,8 @@ export const DevPortalView: React.FC = () => {
     verifyCryptoPaymentByDev,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'crypto' | 'mailbox' | 'referral' | 'sellers'>('overview');
+  const isAdmin = currentUser?.role === 'admin';
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'crypto' | 'mailbox' | 'referral' | 'sellers'>(isAdmin ? 'overview' : 'referral');
   const [systemHealth, setSystemHealth] = useState<any>(null);
   const [isHealthLoading, setIsHealthLoading] = useState(false);
   const [userFilter, setUserFilter] = useState<'all' | 'trial' | 'expired' | 'lifetime' | 'paid' | 'self'>('all');
@@ -277,20 +278,25 @@ export const DevPortalView: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-xs font-extrabold text-amber-300 border border-amber-500/30 backdrop-blur-md">
                 <Crown className="h-3.5 w-3.5" />
-                <span>SUPERADMIN CONSOLE</span>
+                <span>{isAdmin ? 'SUPERADMIN CONSOLE' : 'LIFETIME SELLER'}</span>
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 border border-emerald-500/30 backdrop-blur-md">
-                <Mail className="h-3.5 w-3.5" />
-                <span>Inbox Bisnis: admin@bukukas.ai.studio</span>
-              </span>
+              {isAdmin && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 border border-emerald-500/30 backdrop-blur-md">
+                  <Mail className="h-3.5 w-3.5" />
+                  <span>Inbox Bisnis: admin@bukukas.ai.studio</span>
+                </span>
+              )}
             </div>
 
             <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
-              Panel Pengembang (Developer Portal)
+              {isAdmin ? 'Panel Pengembang (Developer Portal)' : 'Portal Seller & Referral'}
             </h1>
 
             <p className="text-xs text-slate-300 max-w-2xl sm:text-sm">
-              Kelola seluruh pengguna mandiri, tambahkan lisensi <strong className="text-amber-300">Lifetime seumur hidup</strong>, atur masa trial 7 hari, dan akses pusat pesan email bisnis <span className="font-mono text-emerald-400">admin@bukukas.ai.studio</span> langsung di dalam aplikasi.
+              {isAdmin
+                ? <>Kelola seluruh pengguna mandiri, tambahkan lisensi <strong className="text-amber-300">Lifetime seumur hidup</strong>, atur masa trial 7 hari, dan akses pusat pesan email bisnis <span className="font-mono text-emerald-400">admin@bukukas.ai.studio</span> langsung di dalam aplikasi.</>
+                : <>Bagikan link undangan referral Anda untuk mendapatkan <strong className="text-amber-300">Rp30.000</strong> per konversi, dan buat akun baru untuk klien atau rekan bisnis Anda.</>
+              }
             </p>
           </div>
 
@@ -347,15 +353,13 @@ export const DevPortalView: React.FC = () => {
           >
             <Users className="h-4 w-4" />
             <span>Manajemen Akun & Lisensi ({totalUsersCount})</span>
-          </button>
-
-          <button
+          </button>          <button
             onClick={() => setActiveTab('crypto')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition relative ${
               activeTab === 'crypto'
                 ? 'bg-white text-slate-900 shadow-md'
                 : 'text-slate-300 hover:bg-white/10 hover:text-white'
-            }`}
+            } ${!isAdmin ? 'hidden' : ''}`}
           >
             <Wallet className="h-4 w-4 text-amber-400" />
             <span>Verifikasi USDT/USDC Base</span>
@@ -372,7 +376,7 @@ export const DevPortalView: React.FC = () => {
               activeTab === 'mailbox'
                 ? 'bg-white text-slate-900 shadow-md'
                 : 'text-slate-300 hover:bg-white/10 hover:text-white'
-            }`}
+            } ${!isAdmin ? 'hidden' : ''}`}
           >
             <Inbox className="h-4 w-4" />
             <span>Kotak Masuk Email Bisnis</span>
@@ -381,32 +385,32 @@ export const DevPortalView: React.FC = () => {
                 {unreadCount} Baru
               </span>
             )}
-          </button>
-
-          <button
+          </button>          <button
             onClick={() => setActiveTab('referral')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
               activeTab === 'referral'
                 ? 'bg-white text-slate-900 shadow-md'
                 : 'text-slate-300 hover:bg-white/10 hover:text-white'
-            }`}
-          >
+            }`}>
             <Gift className="h-4 w-4 text-amber-400" />
             <span>Referral & Undangan</span>
           </button>
+
+          {isAdmin && (
+            <button
+              onClick={() => setActiveTab('sellers')}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+                activeTab === 'sellers'
+                  ? 'bg-white text-slate-900 shadow-md'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Users className="h-4 w-4 text-emerald-400" />
+              <span>Pengajuan Seller</span>
+            </button>
+          )}
         </div>
       </div>
-          <button
-            onClick={() => setActiveTab('sellers')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
-              activeTab === 'sellers'
-                ? 'bg-white text-slate-900 shadow-md'
-                : 'text-slate-300 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <Users className="h-4 w-4 text-emerald-400" />
-            <span>Pengajuan Seller</span>
-          </button>
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
@@ -549,14 +553,14 @@ export const DevPortalView: React.FC = () => {
               </button>
               <button
                 onClick={() => setActiveTab('mailbox')}
-                className="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-center transition hover:border-emerald-200 hover:bg-emerald-50/30 dark:border-slate-800 dark:bg-slate-800/30 dark:hover:border-emerald-900"
+                className={`flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-center transition hover:border-emerald-200 hover:bg-emerald-50/30 dark:border-slate-800 dark:bg-slate-800/30 dark:hover:border-emerald-900 ${!isAdmin ? 'hidden' : ''}`}
               >
                 <Mail className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Kotak Masuk ({unreadCount} baru)</span>
               </button>
               <button
                 onClick={() => setActiveTab('crypto')}
-                className="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-center transition hover:border-amber-200 hover:bg-amber-50/30 dark:border-slate-800 dark:bg-slate-800/30 dark:hover:border-amber-900"
+                className={`flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-center transition hover:border-amber-200 hover:bg-amber-50/30 dark:border-slate-800 dark:bg-slate-800/30 dark:hover:border-amber-900 ${!isAdmin ? 'hidden' : ''}`}
               >
                 <Wallet className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Crypto ({pendingCryptoCount})</span>

@@ -69,7 +69,7 @@ const AppContent: React.FC = () => {
             {activeView === 'loans' && <LoansView />}
             {activeView === 'categories' && <CategoriesView />}
             {activeView === 'reports' && <ReportsView />}
-            {activeView === 'dev' && (currentUser?.role === 'admin' ? <DevPortalView /> : <DashboardView />)}
+            {activeView === 'dev' && ((currentUser?.role === 'admin' || currentUser?.plan === 'lifetime') ? <DevPortalView /> : <DashboardView />)}
             {(activeView === 'security' || activeView === 'cloud' || activeView === 'settings') && <SecurityView />}
           </main>
         </div>

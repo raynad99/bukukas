@@ -847,6 +847,46 @@ async function startServer() {
     }
   });
 
+  // Account Create — create a new account in Neon DB (Dev Portal)
+  app.post('/api/accounts/create', async (req, res) => {
+    try {
+      const { name, email, password, role, plan, photoUrl, status, registeredSelf, customNotes, referredBy } = req.body;
+      if (!name || !email) {
+        return res.status(400).json({ success: false, error: 'name and email required' });
+      }
+      const id = `usr-srv-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`;
+      const now = new Date().toISOString();
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        // Upsert — if email exists, update; otherwise insert
+        await sql`
+          INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, custom_notes, referred_by, synced_at)
+          VALUES (${id}, ${name}, ${email.toLowerCase()}, ${photoUrl || null}, ${'password'}, ${role || 'user'}, ${plan || 'lifetime'}, ${status || 'active'}, ${registeredSelf ?? false}, ${now}, ${now}, ${customNotes || null}, ${referredBy || null}, ${now})
+          ON CONFLICT (email) DO UPDATE SET
+            name = ${name}, plan = ${plan || 'lifetime'}, role = ${role || 'user'},
+            status = ${status || 'active'}, custom_notes = ${customNotes || null},
+            synced_at = ${now}
+        `;
+        console.log(`[DB] Account created: ${name} (${email}) [${id}]`);
+        return res.json({ success: true, id, message: `Akun ${name} berhasil dibuat.` });
+      }
+
+      // JSON fallback
+      const record = {
+        id, name, email: email.toLowerCase(), photoUrl: photoUrl || undefined,
+        provider: 'password', role: role || 'user', plan: plan || 'lifetime',
+        status: status || 'active', registeredSelf: registeredSelf ?? false,
+        createdAt: now, lastLoginAt: now, customNotes, syncedAt: now,
+      };
+      inMemoryServerAccounts.set(id, record);
+      res.json({ success: true, id, message: `Akun ${name} berhasil dibuat.` });
+    } catch (err: any) {
+      console.error('[DB] POST /api/accounts/create error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Account Cleanup — DELETE all non-admin/non-dev accounts
   app.delete('/api/accounts/cleanup', async (req, res) => {
     const PROTECTED_EMAILS = ['admin@bukukas.ai.studio', 'indoclickshop@gmail.com'];

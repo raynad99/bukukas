@@ -40,6 +40,7 @@ export const Sidebar: React.FC = () => {
   const unreadMessagesCount = businessMessages.filter(m => !m.isRead).length;
   const trialInfo = calculateTrialStatus(currentUser);
   const isAdmin = currentUser?.role === 'admin';
+  const isLifetime = currentUser?.plan === 'lifetime';
 
   const navItems = [
     { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
@@ -82,15 +83,15 @@ export const Sidebar: React.FC = () => {
       badgeColor: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300',
     },
     { id: 'cloud', label: t('nav_cloud'), icon: Cloud },
-    ...(isAdmin
+    ...((isAdmin || isLifetime)
       ? [
           {
             id: 'dev',
-            label: 'Portal Dev & Email',
+            label: isAdmin ? 'Portal Dev & Email' : 'Portal Seller & Referral',
             icon: Crown,
-            badge: unreadMessagesCount > 0 ? `${unreadMessagesCount} baru` : 'admin',
+            badge: unreadMessagesCount > 0 && isAdmin ? `${unreadMessagesCount} baru` : isLifetime ? 'VIP' : 'admin',
             badgeColor:
-              unreadMessagesCount > 0
+              unreadMessagesCount > 0 && isAdmin
                 ? 'bg-rose-500 text-white animate-pulse'
                 : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
             highlight: true,

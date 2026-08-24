@@ -26,12 +26,13 @@ export const BottomNav: React.FC = () => {
   const activeLoansCount = loans ? loans.filter(l => l.status !== 'paid').length : 0;
   const unreadMessagesCount = businessMessages.filter(m => !m.isRead).length;
   const isAdmin = currentUser?.role === 'admin';
+  const isLifetime = currentUser?.plan === 'lifetime';
 
   const moreItems = [
     { id: 'loans', label: t('nav_loans') || 'Hutang & Piutang', icon: HandCoins, badge: activeLoansCount > 0 ? `${activeLoansCount}` : undefined },
     { id: 'ai', label: 'BukuKas AI', icon: Sparkles, badge: 'AI' },
-    ...(isAdmin
-      ? [{ id: 'dev', label: 'Portal Dev', icon: Crown, badge: unreadMessagesCount > 0 ? `${unreadMessagesCount}` : undefined }]
+    ...((isAdmin || isLifetime)
+      ? [{ id: 'dev', label: isAdmin ? 'Portal Dev' : 'Portal Referral', icon: Crown, badge: unreadMessagesCount > 0 && isAdmin ? `${unreadMessagesCount}` : undefined }]
       : []),
     { id: 'categories', label: t('nav_categories'), icon: Grid },
     { id: 'reports', label: t('nav_reports'), icon: FileSpreadsheet },

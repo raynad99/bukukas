@@ -1301,18 +1301,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `Akun ${userData.name} (${userData.email}) siap digunakan dengan kata sandi: ${cleanPass}`
     );
 
-    // Auto-generate referral code for lifetime accounts
-    if (selectedPlan === 'lifetime') {
-      fetch('/api/referral/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: newVipUser.id, email: userData.email }),
-      }).then(r => r.json()).then(data => {
-        if (data.success && data.isNew) {
-          addNotification('info', 'Kode Referral Di-generate 🔗', `Kode referral ${data.code} siap digunakan.`);
+    // Sync to server (Neon DB) and use server ID for referral
+    fetch('/api/accounts/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: userData.name,
+        email: userData.email,
+        password: cleanPass,
+        role: selectedRole,
+        plan: selectedPlan,
+        status: selectedPlan === 'trial' ? 'trial' : 'active',
+        registeredSelf: false,
+        customNotes: userData.customNotes || `Dibuat langsung oleh Developer (${selectedPlan.toUpperCase()}) - Password: ${cleanPass}`,
+      }),
+    }).then(r => r.json()).then(data => {
+      if (data.success && data.id) {
+        // Update the local user with server-generated ID
+        const serverId = data.id;
+        setAllRegisteredAccounts(prev => prev.map(u => u.email.toLowerCase() === userData.email.toLowerCase() ? { ...u, id: serverId } : u));
+        setSavedUsers(prev => prev.map(u => u.email.toLowerCase() === userData.email.toLowerCase() ? { ...u, id: serverId } : u));
+
+        // Auto-generate referral code for lifetime accounts using server ID
+        if (selectedPlan === 'lifetime') {
+          fetch('/api/referral/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: serverId, email: userData.email }),
+          }).then(r2 => r2.json()).then(refData => {
+            if (refData.success && refData.isNew) {
+              addNotification('info', 'Kode Referral Di-generate 🔗', `Kode referral ${refData.code} siap digunakan.`);
+            }
+          }).catch(() => {});
         }
-      }).catch(() => {});
-    }
+      }
+    }).catch(err => {
+      console.error('[Account] Failed to sync to server:', err);
+    });
   };
 
   const updateAccountByDev = (userId: string, data: Partial<UserProfile>) => {

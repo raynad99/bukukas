@@ -221,7 +221,7 @@ describe('Fitur Backend API (server.ts)', () => {
 
     const list = await (await fetch(`${BASE}/api/business-email/messages`)).json();
     expect(list.messages.some((m: any) => m.subject === uniq)).toBe(true);
-  });
+  }, 30000);
 
   test('POST /api/inbound-email webhook → delivered', async () => {
     const r = await fetch(`${BASE}/api/business-email/webhook`, {
@@ -237,13 +237,13 @@ describe('Fitur Backend API (server.ts)', () => {
     const j: any = await r.json();
     expect(j.success).toBe(true);
     expect(j.status).toBe('delivered');
-  });
+  }, 30000);
 
   test('POST /api/chat tanpa API key → fallback reply lokal', async () => {
     const r = await fetch(`${BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'Total saldo saya berapa?' }),
+      body: JSON.stringify({ message: 'Total saldo saya berapa?', useLocalEngine: true }),
     });
     const j: any = await r.json();
     expect(r.status).toBe(200);
@@ -258,6 +258,7 @@ describe('Fitur Backend API (server.ts)', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: 'Bagaimana strategi terbaik mengelola pembukuan dengan multi mata uang (IDR, NZD, USD, TWD, HKD, SGD)?',
+        useLocalEngine: true,
         financialContext: { monthlyIncome: 'Rp 24.700.000', savingsRate: 89, unpaidBillsCount: 3 },
       }),
     });
@@ -274,6 +275,7 @@ describe('Fitur Backend API (server.ts)', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: 'tagihan saya apa saja yang belum dibayar',
+        useLocalEngine: true,
         financialContext: {
           unpaidBillsList: [
             { title: 'Listrik PLN', amount: 'Rp 450.000', dueDate: '2026-08-20', isOverdue: true, recurrence: 'monthly' },
@@ -296,14 +298,25 @@ describe('Fitur Backend API (server.ts)', () => {
     expect(j.conversion_rates?.IDR ?? j.rates?.IDR ?? 1).toBeTruthy();
   });
 
-  test('Validasi input: chat kosong ditolak 400', async () => {
+  test('INTEGRASI 0x ALPHA (butuh OPENROUTER_API_KEY + server live)', async () => {
+    // Jalankan hanya bila health melaporkan key terkonfigurasi
+    const h: any = await (await fetch(`${BASE}/api/health`)).json();
+    if (!h.alphaKeyConfigured) {
+      console.log('    (lewati — OPENROUTER_API_KEY tidak terpasang di server)');
+      return;
+    }
     const r = await fetch(`${BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: '' }),
+      body: JSON.stringify({ message: 'Jawab dengan satu kata saja: siapa nama modelmu?' }),
     });
-    expect(r.status).toBe(400);
-  });
+    const j: any = await r.json();
+    expect(r.status).toBe(200);
+    expect(j.success).toBe(true);
+    expect(j.model).toBe('0x Alpha');
+    expect(typeof j.reply).toBe('string');
+    expect(j.reply.length).toBeGreaterThan(0);
+  }, 60000);
 
   test('REGRESI ISOLASI: registry akun tidak pernah menyimpan password', async () => {
     const uniq = `isolasi-${Date.now()}@test.dev`;

@@ -542,7 +542,7 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">BukuKas AI Advisor</h3>
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                Gemini Flash
+                0x Alpha
               </span>
             </div>
             <p className="text-[11px] text-slate-400">Konsultan Finansial & Pembukuan Cerdas</p>
@@ -709,7 +709,7 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
           </button>
         </form>
         <p className="mt-1.5 text-center text-[10px] text-slate-400">
-          Didukung Google Gemini AI. Rekomendasi bersifat edukatif dan analisis pembukuan pribadi.
+          Didukung **0x Alpha AI** via OpenRouter. Rekomendasi bersifat edukatif dan analisis pembukuan pribadi.
         </p>
       </div>
     </div>

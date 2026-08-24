@@ -55,7 +55,7 @@ export const Sidebar: React.FC = () => {
       id: 'ai',
       label: 'BukuKas AI Chat',
       icon: Sparkles,
-      badge: 'GEMINI',
+      badge: 'ALPHA',
       badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold',
     },
     {

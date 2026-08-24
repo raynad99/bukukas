@@ -1058,7 +1058,7 @@ export const DevPortalView: React.FC = () => {
                     <div className="flex items-center justify-between text-xs font-bold text-indigo-900 dark:text-indigo-200">
                       <span className="flex items-center gap-1.5">
                         <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                        <span>Saran Draf Balasan Cerdas (Gemini AI Developer)</span>
+                        <span>Saran Draf Balasan Cerdas (0x Alpha Developer)</span>
                       </span>
                       <button
                         type="button"

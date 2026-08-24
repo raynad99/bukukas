@@ -96,7 +96,7 @@ const AppContent: React.FC = () => {
               </div>
               <span className="text-xs font-bold tracking-tight">Tanya BukuKas AI</span>
               <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[9px] font-extrabold uppercase">
-                Gemini
+                0x Alpha
               </span>
             </button>
           )}

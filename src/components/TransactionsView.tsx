@@ -131,7 +131,7 @@ export const TransactionsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-4 sm:space-y-6 pb-24 md:pb-12">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center">
         <div>
@@ -222,8 +222,8 @@ export const TransactionsView: React.FC = () => {
       </div>
 
       {/* Filter Bar */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 md:grid-cols-5">
           {/* Search Input */}
           <div className="relative md:col-span-1">
             <Search className="absolute top-2.5 left-3 h-4 w-4 text-slate-400" />

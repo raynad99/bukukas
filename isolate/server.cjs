@@ -28,52 +28,69 @@ module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_vite = require("vite");
-var import_genai = require("@google/genai");
-function getAiClient() {
-  if (!process.env.GEMINI_API_KEY) return null;
-  return new import_genai.GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build"
-      }
-    }
-  });
+var import_dotenv = __toESM(require("dotenv"), 1);
+import_dotenv.default.config();
+import_dotenv.default.config({ path: ".env.local", override: true });
+var OX_ALPHA_MODEL = "stealth/ox-alpha";
+var OX_ALPHA_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
-var GEMINI_MODELS_POOL = [
-  "gemini-3.7-flash",
-  "gemini-flash-latest",
-  "gemini-3.1-flash-lite",
-  "gemini-3.1-pro-preview"
-];
-async function generateWithGeminiFailover(ai, options) {
-  for (const model of GEMINI_MODELS_POOL) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const config = {};
-        if (options.systemInstruction) {
-          config.systemInstruction = options.systemInstruction;
-        }
-        if (options.temperature !== void 0) {
-          config.temperature = options.temperature;
-        }
-        const res = await ai.models.generateContent({
-          model,
-          contents: options.contents,
-          ...Object.keys(config).length > 0 ? { config } : {}
-        });
-        if (res && res.text) {
-          return { text: res.text, modelUsed: model };
-        }
-      } catch (err) {
-        const is503OrRateLimit = err?.status === "UNAVAILABLE" || err?.code === 503 || err?.status === 503 || err?.status === "RESOURCE_EXHAUSTED" || err?.code === 429 || String(err?.message || "").includes("high demand") || String(err?.message || "").includes("503");
-        console.warn(`[Gemini AI] Model ${model} attempt ${attempt + 1} encountered error:`, err?.message || err);
-        if (is503OrRateLimit && attempt === 0) {
-          await new Promise((r) => setTimeout(r, 350));
+async function generateWithOxAlpha(options) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+  const messages = [];
+  if (options.systemInstruction) {
+    messages.push({ role: "system", content: options.systemInstruction });
+  }
+  if (typeof options.contents === "string") {
+    messages.push({ role: "user", content: options.contents });
+  } else if (Array.isArray(options.contents)) {
+    for (const item of options.contents) {
+      const text = Array.isArray(item?.parts) ? item.parts.map((p) => p?.text || "").join("\n") : String(item?.text || item?.content || "");
+      if (!text) continue;
+      messages.push({ role: item.role === "model" ? "assistant" : item.role || "user", content: text });
+    }
+  }
+  if (messages.length === 0) return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(OX_ALPHA_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://bukukas.ai.studio",
+          "X-Title": "BukuKas Pro - 0x Alpha Assistant"
+        },
+        body: JSON.stringify({
+          model: OX_ALPHA_MODEL,
+          messages,
+          temperature: options.temperature ?? 0.7
+        })
+      });
+      if (!res.ok) {
+        const retryable = res.status === 429 || res.status >= 500;
+        console.warn(`[0x Alpha] HTTP ${res.status} (percobaan ${attempt + 1})`);
+        if (retryable && attempt === 0) {
+          await sleep(400);
           continue;
         }
-        break;
+        return null;
       }
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (typeof text === "string" && text.trim()) {
+        return { text: text.trim(), modelUsed: "0x Alpha" };
+      }
+      return null;
+    } catch (err) {
+      console.warn(`[0x Alpha] error (percobaan ${attempt + 1}):`, err?.message || err);
+      if (attempt === 0) {
+        await sleep(400);
+        continue;
+      }
+      return null;
     }
   }
   return null;
@@ -116,7 +133,8 @@ async function startServer() {
       businessEmail: "admin@bukukas.ai.studio",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       activeServerMessagesCount: inMemoryServerMessages.length,
-      capabilities: ["inbound-email-receiver", "gmail-dispatcher", "license-manager", "rates-proxy"]
+      capabilities: ["inbound-email-receiver", "gmail-dispatcher", "license-manager", "rates-proxy", "ox-alpha-chat"],
+      alphaKeyConfigured: !!process.env.OPENROUTER_API_KEY
     });
   });
   app.get("/api/accounts", (req, res) => {
@@ -171,8 +189,7 @@ async function startServer() {
     });
   });
   async function generateAiReply(senderName, senderEmail, subject, message, category) {
-    const ai = getAiClient();
-    if (!ai) return "";
+    if (!process.env.OPENROUTER_API_KEY) return "";
     try {
       const prompt = `Anda adalah Asisten Developer Resmi BukuKas Pro (email bisnis: admin@bukukas.ai.studio).
 Pesan baru masuk dari pengguna:
@@ -183,9 +200,10 @@ Pesan baru masuk dari pengguna:
 - Isi Pesan: ${message}
 
 Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bahasa Indonesia (maksimal 2-3 paragraf). Berikan penjelasan bahwa pesan telah masuk ke Kotak Masuk Pengembang dan akan segera ditindaklanjuti. Jika meminta Lisensi Lifetime atau info Trial, sebutkan bahwa Pengembang dapat mengaktifkan lisensi VIP Lifetime secara langsung di sistem.`;
-      const aiResult = await generateWithGeminiFailover(ai, {
-        contents: prompt
-      });
+      const aiResult = await Promise.race([
+        generateWithOxAlpha({ contents: prompt }),
+        new Promise((resolve) => setTimeout(() => resolve(null), 12e3))
+      ]);
       return aiResult?.text || "";
     } catch (aiErr) {
       console.warn("AI suggestion generation error (non-fatal):", aiErr);
@@ -353,7 +371,7 @@ ${payablesListStr}
 ${settledListStr}
 `;
       }
-      const systemInstruction = `Anda adalah "BukuKas AI Assistant" \u2014 konsultan keuangan dan penasihat pembukuan cerdas pribadi & UMKM resmi dari aplikasi BukuKas Pro.
+      const systemInstruction = `Anda adalah "0x Alpha \u2014 Asisten Keuangan BukuKas Pro" \u2014 konsultan keuangan dan penasihat pembukuan cerdas pribadi & UMKM resmi dari aplikasi BukuKas Pro.
 Karakter Anda:
 - Sangat ramah, bijak, solutif, analitis, akurat secara angka, dan profesional.
 - Ahli dalam manajemen arus kas, pencatatan Hutang & Piutang (Liabilities & Assets), rumus budgeting (50/30/20, amplop, zero-based), pemantauan tagihan, dan konversi multi-mata uang.
@@ -378,15 +396,11 @@ ${contextDescription}`;
         role: "user",
         parts: [{ text: String(message) }]
       });
-      const ai = getAiClient();
-      let generatedResult = null;
-      if (ai) {
-        generatedResult = await generateWithGeminiFailover(ai, {
-          contents: formattedContents,
-          systemInstruction,
-          temperature: 0.7
-        });
-      }
+      let generatedResult = req.body.useLocalEngine ? null : await generateWithOxAlpha({
+        contents: formattedContents,
+        systemInstruction,
+        temperature: 0.7
+      });
       if (generatedResult && generatedResult.text) {
         return res.json({
           success: true,
@@ -566,14 +580,14 @@ Silakan pilih atau ketikkan pertanyaan finansial yang ingin Anda ketahui!`;
       return res.json({
         success: true,
         reply: fallbackReply,
-        model: "bukukas-smart-advisor"
+        model: "0x Alpha (Analisis Lokal)"
       });
     } catch (err) {
       console.error("AI Chatbot Fallback Handled:", err);
       return res.json({
         success: true,
         reply: "Halo! Saya siap membantu Anda menganalisis keuangan, hutang, piutang, dan perencanaan anggaran. Silakan ketikkan pertanyaan finansial Anda.",
-        model: "bukukas-offline-agent"
+        model: "0x Alpha (Analisis Lokal)"
       });
     }
   });

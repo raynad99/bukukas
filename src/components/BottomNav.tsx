@@ -82,14 +82,15 @@ export const BottomNav: React.FC = () => {
       <button
         id="btn-mobile-fab-add"
         onClick={() => setIsAddTransactionOpen(true)}
-        className="fixed right-4 bottom-20 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-lg shadow-emerald-600/40 transition hover:scale-105 active:scale-95 md:hidden"
+        className="fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-lg shadow-emerald-600/40 transition hover:scale-105 active:scale-95 md:hidden"
+        style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom, 0px) + 12px)' }}
         title={t('add_transaction')}
       >
         <Plus className="h-6 w-6" />
       </button>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="fixed right-0 bottom-0 left-0 z-30 flex h-16 items-center justify-around border-t border-slate-200/90 bg-white/95 px-2 backdrop-blur-md dark:border-slate-800/90 dark:bg-slate-900/95 md:hidden">
+      <nav className="fixed right-0 bottom-0 left-0 z-30 flex items-center justify-around border-t border-slate-200/90 bg-white/95 px-2 backdrop-blur-md dark:border-slate-800/90 dark:bg-slate-900/95 md:hidden" style={{ height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <button
           onClick={() => {
             setActiveView('dashboard');

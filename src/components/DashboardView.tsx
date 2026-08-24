@@ -234,7 +234,7 @@ export const DashboardView: React.FC = () => {
   }, [bills]);
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-4 sm:space-y-6 pb-24 md:pb-12">
       {/* Month Picker Header */}
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center">
         <div>
@@ -323,7 +323,7 @@ export const DashboardView: React.FC = () => {
         </div>
 
         {/* Currency Rates Grid - Visible in full across all screens */}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-13">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7">
           {([
             'IDR',
             'NZD',
@@ -387,7 +387,7 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Card 1: Total Saldo */}
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
@@ -585,7 +585,7 @@ export const DashboardView: React.FC = () => {
       )}
 
       {/* Main Visual Charts Grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
         {/* Cash Flow Trend Chart (2 Columns) */}
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
@@ -728,7 +728,7 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* Category Budgets Tracking & Recent Transactions Section */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2">
         {/* Category Budget Progress */}
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-4 flex items-center justify-between">

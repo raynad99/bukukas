@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -64,7 +64,9 @@ export const DevPortalView: React.FC = () => {
     verifyCryptoPaymentByDev,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'users' | 'crypto' | 'mailbox'>('users');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'crypto' | 'mailbox'>('overview');
+  const [systemHealth, setSystemHealth] = useState<any>(null);
+  const [isHealthLoading, setIsHealthLoading] = useState(false);
   const [userFilter, setUserFilter] = useState<'all' | 'trial' | 'expired' | 'lifetime' | 'paid' | 'self'>('all');
   const [userSearch, setUserSearch] = useState('');
   const [isSyncingMail, setIsSyncingMail] = useState(false);
@@ -106,6 +108,24 @@ export const DevPortalView: React.FC = () => {
   const selectedMessage = businessMessages.find(m => m.id === selectedMessageId);
   const unreadCount = businessMessages.filter(m => !m.isRead).length;
   const pendingCryptoCount = cryptoPayments.filter(p => p.status === 'pending').length;
+
+  // Fetch system health on mount and when overview tab is active
+  useEffect(() => {
+    const fetchHealth = async () => {
+      setIsHealthLoading(true);
+      try {
+        const res = await fetch('/api/health');
+        if (res.ok) {
+          const data = await res.json();
+          setSystemHealth(data);
+        }
+      } catch { /* ignore */ }
+      setIsHealthLoading(false);
+    };
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleCopyEmail = () => {
     navigator.clipboard.writeText('admin@bukukas.ai.studio');
@@ -302,6 +322,18 @@ export const DevPortalView: React.FC = () => {
         {/* Quick Navigation Tabs */}
         <div className="mt-6 flex flex-wrap gap-2 border-t border-white/10 pt-4">
           <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+              activeTab === 'overview'
+                ? 'bg-white text-slate-900 shadow-md'
+                : 'text-slate-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Zap className="h-4 w-4 text-emerald-400" />
+            <span>System Overview</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('users')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
               activeTab === 'users'
@@ -396,6 +428,123 @@ export const DevPortalView: React.FC = () => {
           <p className="text-[10px] text-emerald-700/80 dark:text-emerald-400">{unreadCount} belum dibaca</p>
         </div>
       </div>
+
+      {/* TAB 0: SYSTEM OVERVIEW / cPANEL */}
+      {activeTab === 'overview' && (
+        <div className="space-y-4">
+          {/* System Health Status */}
+          <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">System Health Monitor</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Status server, database, dan layanan integrasi</p>
+                </div>
+              </div>
+              <button
+                onClick={async () => { setIsHealthLoading(true); try { const r = await fetch('/api/health'); if (r.ok) setSystemHealth(await r.json()); } catch {} setIsHealthLoading(false); }}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isHealthLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {/* Server Status */}
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                <div className="flex items-center gap-2">
+                  <div className={`h-2.5 w-2.5 rounded-full ${systemHealth?.status === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                  <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Server Status</span>
+                </div>
+                <p className="mt-2 text-lg font-black text-emerald-900 dark:text-emerald-200">{systemHealth?.status === 'ok' ? 'ONLINE' : 'OFFLINE'}</p>
+                <p className="text-[10px] text-emerald-700/70 dark:text-emerald-400">Express.js v0.0.0.0:3000</p>
+              </div>
+
+              {/* Database Status */}
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+                <div className="flex items-center gap-2">
+                  <div className={`h-2.5 w-2.5 rounded-full ${systemHealth?.database === 'neon-postgres' ? 'bg-indigo-500 animate-pulse' : 'bg-amber-500'}`} />
+                  <span className="text-xs font-bold text-indigo-800 dark:text-indigo-300">Database</span>
+                </div>
+                <p className="mt-2 text-lg font-black text-indigo-900 dark:text-indigo-200">{systemHealth?.database === 'neon-postgres' ? 'Neon Postgres' : 'JSON File'}</p>
+                <p className="text-[10px] text-indigo-700/70 dark:text-indigo-400">Serverless PostgreSQL</p>
+              </div>
+
+              {/* Email Service */}
+              <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20">
+                <div className="flex items-center gap-2">
+                  <div className={`h-2.5 w-2.5 rounded-full ${systemHealth?.emailConfigured ? 'bg-rose-500 animate-pulse' : 'bg-slate-400'}`} />
+                  <span className="text-xs font-bold text-rose-800 dark:text-rose-300">Email (Resend)</span>
+                </div>
+                <p className="mt-2 text-lg font-black text-rose-900 dark:text-rose-200">{systemHealth?.emailConfigured ? 'ACTIVE' : 'INACTIVE'}</p>
+                <p className="text-[10px] text-rose-700/70 dark:text-rose-400">onboarding@resend.dev</p>
+              </div>
+
+              {/* AI Engine */}
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+                <div className="flex items-center gap-2">
+                  <div className={`h-2.5 w-2.5 rounded-full ${systemHealth?.alphaKeyConfigured ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
+                  <span className="text-xs font-bold text-amber-800 dark:text-amber-300">AI (0x Alpha)</span>
+                </div>
+                <p className="mt-2 text-lg font-black text-amber-900 dark:text-amber-200">{systemHealth?.alphaKeyConfigured ? 'ACTIVE' : 'FALLBACK'}</p>
+                <p className="text-[10px] text-amber-700/70 dark:text-amber-400">OpenRouter Model</p>
+              </div>
+            </div>
+
+            {/* Capabilities & Info */}
+            <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-800/30">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-3">Server Capabilities</h4>
+              <div className="flex flex-wrap gap-2">
+                {(systemHealth?.capabilities || []).map((cap: string) => (
+                  <span key={cap} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                    <Check className="h-3 w-3" />
+                    {cap}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Actions Grid */}
+          <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+            <h3 className="text-sm font-black text-slate-900 dark:text-white mb-4">Quick Actions</h3>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <button
+                onClick={() => setActiveTab('users')}
+                className="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-center transition hover:border-indigo-200 hover:bg-indigo-50/30 dark:border-slate-800 dark:bg-slate-800/30 dark:hover:border-indigo-900"
+              >
+                <UserPlus className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Tambah Akun</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('mailbox')}
+                className="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-center transition hover:border-emerald-200 hover:bg-emerald-50/30 dark:border-slate-800 dark:bg-slate-800/30 dark:hover:border-emerald-900"
+              >
+                <Mail className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Kotak Masuk ({unreadCount} baru)</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('crypto')}
+                className="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-center transition hover:border-amber-200 hover:bg-amber-50/30 dark:border-slate-800 dark:bg-slate-800/30 dark:hover:border-amber-900"
+              >
+                <Wallet className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Crypto ({pendingCryptoCount})</span>
+              </button>
+              <button
+                onClick={() => { window.open('https://console.cloud.google.com/apis/credentials', '_blank'); }}
+                className="flex flex-col items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-center transition hover:border-rose-200 hover:bg-rose-50/30 dark:border-slate-800 dark:bg-slate-800/30 dark:hover:border-rose-900"
+              >
+                <KeyRound className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Google Cloud Console</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: USERS & LICENSE MANAGEMENT */}
       {activeTab === 'users' && (

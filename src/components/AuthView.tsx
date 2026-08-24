@@ -305,7 +305,12 @@ export const AuthView: React.FC = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: email.trim(), name: name.trim() }),
           });
-          const data = await res.json();
+          const respText = await res.text();
+          if (!respText || !respText.trim()) {
+            throw new Error('Server tidak merespons. Silakan coba beberapa saat lagi.');
+          }
+          let data: any;
+          try { data = JSON.parse(respText); } catch { throw new Error('Respons server tidak valid.'); }
           
           if (data.alreadyVerified) {
             // Email already verified, just register
@@ -347,12 +352,16 @@ export const AuthView: React.FC = () => {
     if (!emailSentTo) return;
     setVerificationLoading(true);
     try {
-      await fetch('/api/auth/send-verification', {
+      const resendRes = await fetch('/api/auth/send-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailSentTo, name: name.trim() }),
       });
-      addNotification('success', 'Email Terkirim Lagi', `Email verifikasi baru telah dikirim ke ${emailSentTo}.`);
+      if (resendRes.ok) {
+        addNotification('success', 'Email Terkirim Lagi', `Email verifikasi baru telah dikirim ke ${emailSentTo}. Cek inbox & spam folder.`);
+      } else {
+        addNotification('info', 'Server Sibuk', 'Gagal mengirim ulang. Silakan coba beberapa saat lagi.');
+      }
     } catch {
       addNotification('error', 'Gagal Mengirim', 'Tidak dapat mengirim ulang email verifikasi.');
     } finally {

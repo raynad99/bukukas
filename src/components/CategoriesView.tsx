@@ -111,7 +111,7 @@ export const CategoriesView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-24 md:pb-12">
       {/* View Header */}
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center">
         <div>
@@ -339,7 +339,7 @@ export const CategoriesView: React.FC = () => {
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                   {t('category_icon')}
                 </label>
-                <div className="mt-1.5 grid grid-cols-6 gap-2 max-h-32 overflow-y-auto p-1 border rounded-xl border-slate-200 dark:border-slate-700">
+                <div className="mt-1.5 grid grid-cols-5 sm:grid-cols-6 gap-1.5 sm:gap-2 max-h-32 overflow-y-auto p-1 border rounded-xl border-slate-200 dark:border-slate-700">
                   {AVAILABLE_CATEGORY_ICONS.map(iName => (
                     <button
                       key={iName}

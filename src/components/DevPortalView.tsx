@@ -245,7 +245,7 @@ export const DevPortalView: React.FC = () => {
   const lifetimeVipCount = allRegisteredAccounts.filter(u => calculateTrialStatus(u).isLifetime).length;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 pb-12">
+    <div className="mx-auto max-w-7xl space-y-6 pb-24 md:pb-12">
       {/* Dev Header Banner */}
       <div className="rounded-3xl border border-indigo-200/80 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-white shadow-xl sm:p-8 dark:border-slate-800">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">

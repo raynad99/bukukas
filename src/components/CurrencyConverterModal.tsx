@@ -138,7 +138,7 @@ export const CurrencyConverterModal: React.FC = () => {
             Kalkulator Konversi Kurs
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-7 sm:items-center">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:grid-cols-7 sm:items-center">
             {/* From Currency Block */}
             <div className="space-y-1 sm:col-span-3">
               <div className="flex items-center justify-between mb-1">

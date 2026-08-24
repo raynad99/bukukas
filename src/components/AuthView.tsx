@@ -193,7 +193,17 @@ export const AuthView: React.FC = () => {
           clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
         }),
       });
-      const data = await res.json();
+      // Safely parse JSON — guard against empty/invalid responses
+      const text = await res.text();
+      if (!text || !text.trim()) {
+        throw new Error('Server tidak merespons. Coba lagi beberapa saat.');
+      }
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error('Respons server tidak valid. Coba lagi beberapa saat.');
+      }
       if (!data.success) {
         throw new Error(data.error || 'Verifikasi Google gagal.');
       }
@@ -222,17 +232,23 @@ export const AuthView: React.FC = () => {
       setErrorMessage('Google SSO belum aktif. Hubungi admin untuk konfigurasi.');
       return;
     }
-    // Try rendered Google button first, fallback to redirect
-    const container = document.getElementById('google-signin-button');
-    if (container && container.children.length > 0) {
-      // Button already rendered - click it
-      const btn = container.querySelector('[role="button"]') as HTMLElement;
-      if (btn) { btn.click(); return; }
-    }
-    // Fallback: open Google OAuth popup manually
+    // Re-initialize GIS with latest callback, then prompt
     const w = window as any;
     if (w.google?.accounts?.id) {
-      w.google.accounts.id.prompt();
+      w.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+      w.google.accounts.id.prompt((promptResponse: any) => {
+        if (promptResponse.isNotDisplayed()) {
+          // Prompt not shown — inform user
+          setGoogleError('Popup Google diblokir browser. Silakan izinkan popup atau coba lagi.');
+        }
+      });
+    } else {
+      setGoogleError('Google Identity Services belum dimuat. Muat ulang halaman.');
     }
   };
 

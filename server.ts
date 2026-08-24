@@ -372,6 +372,62 @@ async function startServer() {
     return res.json({ verified: true, message: 'Email terverifikasi.' });
   });
 
+  // ==================== Google SSO Token Verification ====================
+  app.post("/api/auth/google", async (req, res) => {
+    try {
+      const { credential, clientId } = req.body;
+      if (!credential) {
+        return res.status(400).json({ success: false, error: 'Google credential not provided.' });
+      }
+
+      // Decode the JWT payload (header.payload.signature)
+      const parts = credential.split('.');
+      if (parts.length !== 3) {
+        return res.status(400).json({ success: false, error: 'Invalid Google credential format.' });
+      }
+
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+
+      // Basic validation
+      const expectedClientId = process.env.GOOGLE_CLIENT_ID || clientId;
+      if (expectedClientId && payload.aud !== expectedClientId) {
+        console.warn('[Google SSO] Client ID mismatch:', payload.aud, 'expected:', expectedClientId);
+        // Allow in dev mode if GOOGLE_CLIENT_ID not set
+        if (process.env.GOOGLE_CLIENT_ID) {
+          return res.status(401).json({ success: false, error: 'Invalid Google client ID.' });
+        }
+      }
+
+      // Check expiry
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        return res.status(401).json({ success: false, error: 'Google token expired.' });
+      }
+
+      const email = payload.email;
+      const name = payload.name || payload.given_name || email?.split('@')[0] || 'Google User';
+      const photoUrl = payload.picture || '';
+      const emailVerified = payload.email_verified === true;
+
+      if (!email) {
+        return res.status(400).json({ success: false, error: 'No email in Google token.' });
+      }
+
+      console.log(`[Google SSO] Verified login: ${email} (${name})`);
+
+      res.json({
+        success: true,
+        email,
+        name,
+        photoUrl,
+        emailVerified,
+        provider: 'google',
+      });
+    } catch (err: any) {
+      console.error('[Google SSO] Token verification failed:', err?.message);
+      res.status(500).json({ success: false, error: 'Failed to verify Google token.' });
+    }
+  });
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({

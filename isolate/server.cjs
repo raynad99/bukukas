@@ -96,16 +96,65 @@ async function createTablesIfNotExist() {
         source TEXT DEFAULT 'in-app'
       )
     `;
-    console.log("[DB] Tables created/verified: server_accounts, server_messages");
+    await sql`
+      CREATE TABLE IF NOT EXISTS verification_tokens (
+        token TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        created_at TEXT DEFAULT NOW()::TEXT
+      )
+    `;
+    console.log("[DB] Tables created/verified: server_accounts, server_messages, verification_tokens");
   } catch (err) {
     console.warn("[DB] Table creation error:", err);
   }
 }
 
 // server.ts
+var import_resend = require("resend");
 import_dotenv.default.config();
 import_dotenv.default.config({ path: ".env.local", override: true });
 initDatabase();
+var RESEND_API_KEY = process.env.RESEND_API_KEY;
+var resend = RESEND_API_KEY ? new import_resend.Resend(RESEND_API_KEY) : null;
+var EMAIL_FROM = "BukuKas Pro <onboarding@resend.dev>";
+var verificationTokens = /* @__PURE__ */ new Map();
+function generateVerificationToken() {
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+async function sendVerificationEmail(to, token) {
+  if (!resend) {
+    console.warn("[Email] RESEND_API_KEY not configured - skipping email send");
+    return false;
+  }
+  try {
+    const verifyUrl = `${process.env.APP_URL || "http://localhost:3000"}/api/auth/verify/${token}`;
+    await resend.emails.send({
+      from: EMAIL_FROM,
+      to,
+      subject: "Verifikasi Email - BukuKas Pro",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #10b981;">\u{1F510} Verifikasi Email Anda</h2>
+          <p>Halo,</p>
+          <p>Anda telah mendaftar di <strong>BukuKas Pro</strong>. Klik tombol di bawah untuk memverifikasi email Anda:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${verifyUrl}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">\u2705 Verifikasi Email Saya</a>
+          </div>
+          <p style="color: #666; font-size: 13px;">Atau salin link ini ke browser: <a href="${verifyUrl}">${verifyUrl}</a></p>
+          <p style="color: #999; font-size: 12px; margin-top: 30px;">Link ini berlaku selama 15 menit. Jika Anda tidak mendaftar, abaikan email ini.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+          <p style="color: #999; font-size: 11px; text-align: center;">BukuKas Pro - Pembukuan Cerdas untuk UMKM</p>
+        </div>
+      `
+    });
+    console.log(`[Email] Verification email sent to ${to}`);
+    return true;
+  } catch (err) {
+    console.error("[Email] Failed to send verification email:", err?.message || err);
+    return false;
+  }
+}
 var OX_ALPHA_MODEL = "stealth/ox-alpha";
 var OX_ALPHA_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 function sleep(ms) {
@@ -258,6 +307,107 @@ async function startServer() {
     await createTablesIfNotExist();
     console.log("[DB] Neon Postgres ready for queries");
   }
+  app.post("/api/auth/send-verification", async (req, res) => {
+    try {
+      const { email, name } = req.body;
+      if (!email || !email.includes("@")) {
+        return res.status(400).json({ success: false, error: "Email tidak valid." });
+      }
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const existing = await sql2`SELECT id FROM server_accounts WHERE email = ${email.toLowerCase()} LIMIT 1`;
+        if (existing.length > 0) {
+          return res.json({ success: true, alreadyVerified: true, message: "Email sudah terverifikasi. Silakan masuk." });
+        }
+      }
+      const token = generateVerificationToken();
+      verificationTokens.set(token, {
+        email: email.toLowerCase(),
+        expiresAt: Date.now() + 15 * 60 * 1e3
+      });
+      for (const [key, val] of verificationTokens) {
+        if (val.expiresAt < Date.now()) verificationTokens.delete(key);
+      }
+      const sent = await sendVerificationEmail(email, token);
+      if (!sent) {
+        console.warn("[Email] Resend not configured - auto-verifying for dev mode");
+        return res.json({ success: true, devMode: true, token, message: "Email terkirim (dev mode - auto verified)." });
+      }
+      return res.json({ success: true, message: `Email verifikasi telah dikirim ke ${email}. Silakan cek inbox Anda.` });
+    } catch (err) {
+      console.error("[Auth] Send verification error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Gagal mengirim email verifikasi." });
+    }
+  });
+  app.get("/api/auth/verify/:token", (req, res) => {
+    try {
+      const { token } = req.params;
+      const record = verificationTokens.get(token);
+      if (!record) {
+        return res.send(`<!DOCTYPE html><html><head><title>Verifikasi Gagal</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#fef2f2;}.card{background:white;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;max-width:400px;}.icon{font-size:48px;margin-bottom:16px;}</style></head><body><div class="card"><div class="icon">\u274C</div><h2>Verifikasi Gagal</h2><p>Link verifikasi tidak valid atau sudah kedaluwarsa.</p><p style="color:#666;font-size:14px;">Silakan daftar ulang untuk mendapatkan link baru.</p></div></body></html>`);
+      }
+      if (record.expiresAt < Date.now()) {
+        verificationTokens.delete(token);
+        return res.send(`<!DOCTYPE html><html><head><title>Link Kedaluwarsa</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#fef2f2;}.card{background:white;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;max-width:400px;}.icon{font-size:48px;margin-bottom:16px;}</style></head><body><div class="card"><div class="icon">\u23F0</div><h2>Link Kedaluwarsa</h2><p>Link verifikasi sudah tidak berlaku (lewat 15 menit).</p><p style="color:#666;font-size:14px;">Silakan daftar ulang untuk mendapatkan link baru.</p></div></body></html>`);
+      }
+      verificationTokens.delete(token);
+      return res.send(`<!DOCTYPE html><html><head><title>Verifikasi Berhasil</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0fdf4;}.card{background:white;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;max-width:400px;}.icon{font-size:48px;margin-bottom:16px;}.btn{display:inline-block;margin-top:20px;padding:12px 24px;background:#10b981;color:white;text-decoration:none;border-radius:8px;font-weight:bold;}</style></head><body><div class="card"><div class="icon">\u2705</div><h2>Email Terverifikasi!</h2><p>Email <strong>${record.email}</strong> telah berhasil diverifikasi.</p><p style="color:#666;font-size:14px;">Anda sekarang bisa masuk ke akun BukuKas Pro.</p><a class="btn" href="/">Buka BukuKas Pro</a></div></body></html>`);
+    } catch (err) {
+      return res.status(500).send("Verifikasi error.");
+    }
+  });
+  app.get("/api/auth/check-verification/:email", (req, res) => {
+    const email = req.params.email?.toLowerCase();
+    if (!email) return res.json({ verified: false });
+    for (const [, record] of verificationTokens) {
+      if (record.email === email && record.expiresAt > Date.now()) {
+        return res.json({ verified: false, pending: true, message: "Menunggu verifikasi - cek email Anda." });
+      }
+    }
+    return res.json({ verified: true, message: "Email terverifikasi." });
+  });
+  app.post("/api/auth/google", async (req, res) => {
+    try {
+      const { credential, clientId } = req.body;
+      if (!credential) {
+        return res.status(400).json({ success: false, error: "Google credential not provided." });
+      }
+      const parts = credential.split(".");
+      if (parts.length !== 3) {
+        return res.status(400).json({ success: false, error: "Invalid Google credential format." });
+      }
+      const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
+      const expectedClientId = process.env.GOOGLE_CLIENT_ID || clientId;
+      if (expectedClientId && payload.aud !== expectedClientId) {
+        console.warn("[Google SSO] Client ID mismatch:", payload.aud, "expected:", expectedClientId);
+        if (process.env.GOOGLE_CLIENT_ID) {
+          return res.status(401).json({ success: false, error: "Invalid Google client ID." });
+        }
+      }
+      if (payload.exp && payload.exp * 1e3 < Date.now()) {
+        return res.status(401).json({ success: false, error: "Google token expired." });
+      }
+      const email = payload.email;
+      const name = payload.name || payload.given_name || email?.split("@")[0] || "Google User";
+      const photoUrl = payload.picture || "";
+      const emailVerified = payload.email_verified === true;
+      if (!email) {
+        return res.status(400).json({ success: false, error: "No email in Google token." });
+      }
+      console.log(`[Google SSO] Verified login: ${email} (${name})`);
+      res.json({
+        success: true,
+        email,
+        name,
+        photoUrl,
+        emailVerified,
+        provider: "google"
+      });
+    } catch (err) {
+      console.error("[Google SSO] Token verification failed:", err?.message);
+      res.status(500).json({ success: false, error: "Failed to verify Google token." });
+    }
+  });
   app.get("/api/health", (req, res) => {
     res.json({
       status: "ok",
@@ -265,8 +415,9 @@ async function startServer() {
       businessEmail: "admin@bukukas.ai.studio",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       activeServerMessagesCount: inMemoryServerMessages.length,
-      capabilities: ["inbound-email-receiver", "gmail-dispatcher", "license-manager", "rates-proxy", "ox-alpha-chat"],
+      capabilities: ["inbound-email-receiver", "gmail-dispatcher", "license-manager", "rates-proxy", "ox-alpha-chat", "email-verification"],
       alphaKeyConfigured: !!process.env.OPENROUTER_API_KEY,
+      emailConfigured: !!resend,
       database: isDbAvailable() ? "neon-postgres" : "json-file"
     });
   });

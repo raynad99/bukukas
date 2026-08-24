@@ -94,6 +94,17 @@ export const AuthView: React.FC = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState(currentUser?.name || '');
 
+  // Switch account secure verification state (isolation: wajib kata sandi akun tujuan)
+  const [pendingSwitchUser, setPendingSwitchUser] = useState<UserProfile | null>(null);
+  const [switchPassword, setSwitchPassword] = useState('');
+  const [switchError, setSwitchError] = useState<string | null>(null);
+
+  // ISOLASI: akun admin/dev disembunyikan dari daftar sesi milik user biasa
+  const visibleSavedUsers =
+    currentUser?.role === 'admin'
+      ? savedUsers
+      : savedUsers.filter(u => u.role !== 'admin');
+
   const trialInfo = calculateTrialStatus(currentUser);
 
   // Detect URL parameter for direct dev access or password reset
@@ -172,7 +183,8 @@ export const AuthView: React.FC = () => {
     setErrorMessage(null);
     setGoogleError(null);
     try {
-      await loginWithGoogle(targetEmail.trim(), targetName?.trim());
+      // Teruskan intent tab aktif agar Login ≠ Register (bug lama: selalu auto-buat akun)
+      await loginWithGoogle(targetEmail.trim(), targetName?.trim(), mode);
       setIsGoogleModalOpen(false);
     } catch (err: any) {
       setGoogleError(err?.message || 'Gagal memproses masuk dengan akun Google.');
@@ -329,6 +341,31 @@ export const AuthView: React.FC = () => {
     }
   };
 
+  // --- Secure account switching (wajib verifikasi kata sandi akun tujuan) ---
+  const handleSwitchRequest = (user: UserProfile) => {
+    setPendingSwitchUser(user);
+    setSwitchPassword('');
+    setSwitchError(null);
+  };
+
+  const handleCancelSwitch = () => {
+    setPendingSwitchUser(null);
+    setSwitchPassword('');
+    setSwitchError(null);
+  };
+
+  const handleConfirmSwitch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingSwitchUser) return;
+
+    const ok = switchAccount(pendingSwitchUser.id, switchPassword);
+    if (ok) {
+      handleCancelSwitch();
+    } else {
+      setSwitchError(`Kata sandi akun ${pendingSwitchUser.email} salah. Coba lagi atau gunakan menu Masuk (Login).`);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-12">
       {/* Header Banner */}
@@ -347,7 +384,7 @@ export const AuthView: React.FC = () => {
               )}
             </div>
             <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
-              {currentUser ? 'Pusat Akun & Profil' : 'Masuk ke Pembukuan Keuangan'}
+              {currentUser ? 'Pusat Akun & Profil' : 'Masuk ke Pembukuan Keuangan BukuKas'}
             </h1>
             <p className="text-sm text-slate-300 max-w-xl">
               {currentUser
@@ -663,13 +700,13 @@ export const AuthView: React.FC = () => {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
                   <Users className="h-4 w-4 text-emerald-600" />
-                  Sesi Akun Tersimpan ({savedUsers.length})
+                  Sesi Akun Tersimpan ({visibleSavedUsers.length})
                 </h3>
               </div>
 
-              {savedUsers.length > 0 ? (
+              {visibleSavedUsers.length > 0 ? (
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                  {savedUsers.map(user => {
+                  {visibleSavedUsers.map(user => {
                     const isActive = user.id === currentUser.id;
                     const uStatus = calculateTrialStatus(user);
                     return (
@@ -682,7 +719,7 @@ export const AuthView: React.FC = () => {
                         }`}
                       >
                         <button
-                          onClick={() => switchAccount(user.id)}
+                          onClick={() => !isActive && handleSwitchRequest(user)}
                           className="flex items-center gap-2.5 text-left flex-1 min-w-0"
                         >
                           <img
@@ -1355,7 +1392,9 @@ export const AuthView: React.FC = () => {
                     Masuk Akun Google (SSO)
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Pilih akun cepat atau masukkan alamat Gmail Anda
+                    {mode === 'register'
+                      ? 'Mode Daftar: email Gmail baru akan dibuatkan akun Trial 7 hari'
+                      : 'Mode Masuk: gunakan email Gmail yang sudah terdaftar'}
                   </p>
                 </div>
               </div>
@@ -1375,61 +1414,7 @@ export const AuthView: React.FC = () => {
               </div>
             )}
 
-            {/* Quick account presets */}
-            <div className="mt-4 space-y-2">
-              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Pilihan Akun Cepat
-              </label>
-
-              <div className="grid gap-2">
-                <button
-                  type="button"
-                  onClick={() => executeGoogleAuth('indoclickshop@gmail.com', 'Super Admin Indoclick')}
-                  disabled={isLoading}
-                  className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50/60 p-3 text-left transition hover:bg-amber-100/70 dark:border-amber-900/50 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500 text-slate-950 font-black text-xs">
-                      👑
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
-                        <span>indoclickshop@gmail.com</span>
-                        <span className="rounded bg-amber-500/20 px-1.5 py-0.2 text-[9px] font-bold text-amber-800 dark:text-amber-300">
-                          Dev / Admin
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Superadmin BukuKas • Lifetime Pro
-                      </div>
-                    </div>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-slate-400" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => executeGoogleAuth('admin@bukukas.ai.studio', 'Developer Mailbox')}
-                  disabled={isLoading}
-                  className="flex items-center justify-between rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 text-left transition hover:bg-indigo-100/70 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:hover:bg-indigo-950/50"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600 text-white font-black text-xs">
-                      📧
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs text-slate-900 dark:text-white">
-                        admin@bukukas.ai.studio
-                      </div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Email Resmi Developer & Kotak Masuk
-                      </div>
-                    </div>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-slate-400" />
-                </button>
-              </div>
-            </div>
+            {/* Akun cepat admin/dev dihapus demi isolasi & keamanan */}
 
             {/* Custom Google Email Form */}
             <form
@@ -1497,6 +1482,74 @@ export const AuthView: React.FC = () => {
           </div>
         </div>
       )}
+      {/* SWITCH ACCOUNT — Verifikasi Kata Sandi Modal (Isolasi & Keamanan) */}
+      {pendingSwitchUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start gap-3">
+              <img
+                src={pendingSwitchUser.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(pendingSwitchUser.name)}&background=10b981&color=fff`}
+                alt={pendingSwitchUser.name}
+                referrerPolicy="no-referrer"
+                className="h-11 w-11 rounded-full border object-cover shrink-0"
+              />
+              <div className="min-w-0">
+                <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                  Ganti ke {pendingSwitchUser.name}
+                </h3>
+                <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
+                  {pendingSwitchUser.email}
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-3 rounded-xl bg-amber-50 p-2.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              🔒 Untuk keamanan & isolasi data, masukkan kata sandi akun tujuan untuk melanjutkan.
+            </p>
+
+            {switchError && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-rose-50 p-2.5 text-xs font-medium text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{switchError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmSwitch} className="mt-4 space-y-3">
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  value={switchPassword}
+                  onChange={e => setSwitchPassword(e.target.value)}
+                  placeholder="Kata sandi akun ini"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 focus:border-emerald-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleCancelSwitch}
+                  className="rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={!switchPassword}
+                  className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-500 active:scale-95 disabled:opacity-50"
+                >
+                  <UserCheck className="h-4 w-4" />
+                  <span>Verifikasi & Ganti Akun</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

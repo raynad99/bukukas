@@ -34,6 +34,10 @@ const AppContent: React.FC = () => {
   const { activeView, setActiveView, security, notifications, removeNotification, currentUser } = useApp();
   const [isAiFloatingOpen, setIsAiFloatingOpen] = useState(false);
 
+  // GATE AUTENTIKASI: tamu (belum login) hanya boleh melihat halaman login.
+  // Seluruh navigasi fitur (sidebar, header, bottom nav) disembunyikan.
+  const isGuest = !currentUser;
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 transition-colors duration-200 antialiased dark:bg-slate-950 dark:text-slate-100">
       {/* Lock screen overlay if locked */}
@@ -41,20 +45,22 @@ const AppContent: React.FC = () => {
 
       {/* Main Layout Container */}
       <div className="flex min-h-screen w-full">
-        {/* Desktop Left Sidebar */}
-        <Sidebar />
+        {/* Desktop Left Sidebar (hanya untuk user yang sudah login) */}
+        {!isGuest && <Sidebar />}
 
         {/* Right Main Content Area */}
         <div className="flex flex-1 flex-col overflow-x-hidden">
-          {/* Top Bar Header */}
-          <Header />
+          {/* Top Bar Header (disembunyikan di halaman login) */}
+          {!isGuest && <Header />}
 
           {/* View Container */}
           <main className="flex-1 px-3 py-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto pb-24 md:pb-12">
             {activeView === 'dashboard' && <DashboardView />}
             {activeView === 'transactions' && <TransactionsView />}
             {activeView === 'ai' && <AiChatBot isEmbedded={true} />}
-            {(activeView === 'auth' || activeView === 'account' || activeView === 'login' || activeView === 'register') && <AuthView />}
+            {/* TAMU: paksa selalu tampilkan halaman login apapun activeView-nya */}
+            {isGuest && <AuthView />}
+            {!isGuest && (activeView === 'auth' || activeView === 'account' || activeView === 'login' || activeView === 'register') && <AuthView />}
             {activeView === 'bills' && <BillsView />}
             {activeView === 'loans' && <LoansView />}
             {activeView === 'categories' && <CategoriesView />}
@@ -65,11 +71,11 @@ const AppContent: React.FC = () => {
         </div>
       </div>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <BottomNav />
+      {/* Mobile Bottom Navigation Bar (hanya untuk user yang sudah login) */}
+      {!isGuest && <BottomNav />}
 
-      {/* Floating AI Chatbot Assistant Widget (Desktop & Tablet) */}
-      {activeView !== 'ai' && (
+      {/* Floating AI Chatbot Assistant Widget (Desktop & Tablet, user login saja) */}
+      {!isGuest && activeView !== 'ai' && (
         <div className="fixed right-6 bottom-6 z-40 hidden md:block">
           {isAiFloatingOpen ? (
             <div className="relative">

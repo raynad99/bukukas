@@ -16,6 +16,19 @@ export function formatThousand(
   const strVal = typeof val === 'number' ? val.toString() : String(val);
   if (!strVal || strVal === '0') return '0';
 
+  // Numbers have an unambiguous decimal point (always '.'), so format them
+  // directly instead of relying on locale heuristics. Prevents values like
+  // 1250.5 being misread as "125.050" (off by 100x).
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    const isNegNum = val < 0;
+    const [numInt, numDec] = Math.abs(val).toString().split('.');
+    const sepInt = numInt.replace(/\B(?=(\d{3})+(?!\d))/g, isIndonesianStyle ? '.' : ',');
+    if (numDec) {
+      return `${isNegNum ? '-' : ''}${sepInt}${isIndonesianStyle ? ',' : '.'}${numDec}`;
+    }
+    return `${isNegNum ? '-' : ''}${sepInt}`;
+  }
+
   // Clean non-digit characters except period, comma, and minus
   let cleanStr = strVal.replace(/[^\d.,-]/g, '');
   if (!cleanStr) return '';
@@ -37,8 +50,23 @@ export function formatThousand(
       decDigits = cleanStr.slice(commaIndex + 1).replace(/[^\d]/g, '');
       intDigits = intPart.replace(/[^\d]/g, '');
     } else {
-      // If there is no comma, all dots are thousand separators and stripped
-      intDigits = cleanStr.replace(/[^\d]/g, '');
+      // No comma: dots are usually thousand separators, BUT a single trailing
+      // dot followed by 1-2 digits (e.g. "1250.50") is a decimal separator.
+      const lastDotIdx = cleanStr.lastIndexOf('.');
+      const dotCount = (cleanStr.match(/\./g) || []).length;
+      if (
+        lastDotIdx !== -1 &&
+        dotCount === 1 &&
+        cleanStr.length - lastDotIdx - 1 >= 1 &&
+        cleanStr.length - lastDotIdx - 1 <= 2
+      ) {
+        hasDecimal = true;
+        intDigits = cleanStr.slice(0, lastDotIdx).replace(/[^\d]/g, '');
+        decDigits = cleanStr.slice(lastDotIdx + 1).replace(/[^\d]/g, '');
+      } else {
+        // All dots are thousand separators and stripped
+        intDigits = cleanStr.replace(/[^\d]/g, '');
+      }
     }
   } else {
     // English style: thousand separator is comma (,), decimal separator is dot (.)

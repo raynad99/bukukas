@@ -61,6 +61,97 @@ const PRESET_PROMPTS = [
   },
 ];
 
+/**
+ * Mesin analisis lokal (offline fallback).
+ * Dipakai otomatis bila endpoint /api/chat tidak tersedia (mis. hosting statis)
+ * atau gagal — chatbot tetap menjawab memakai data finansial real-time pengguna.
+ */
+function buildLocalAiReply(
+  message: string,
+  ctx: {
+    userName: string;
+    currency: string;
+    totalBalance: string;
+    monthlyIncome: string;
+    monthlyExpense: string;
+    netSavings: string;
+    savingsRate: number;
+    unpaidBillsCount: number;
+    loansSummary: {
+      remainingReceivables: string;
+      activeReceivablesCount: number;
+      activeReceivablesList: any[];
+      remainingPayables: string;
+      activePayablesCount: number;
+      activePayablesList: any[];
+      netLoanPosition: string;
+      overdueLoansCount: number;
+    };
+  }
+): string {
+  const q = message.toLowerCase();
+  const ls = ctx.loansSummary;
+
+  const receivablesMd = ls.activeReceivablesList.length
+    ? ls.activeReceivablesList
+        .map(
+          (r: any, i: number) =>
+            `${i + 1}. **${r.person}** — *${r.title}*\n   - Sisa belum diterima: **${r.remainingAmount}** (pokok ${r.amount})\n   - Jatuh tempo: ${r.dueDate} | Kontak: ${r.contactPhone}`
+        )
+        .join('\n\n')
+    : '_Tidak ada piutang aktif saat ini — semua sudah lunas! 🎉_';
+
+  const payablesMd = ls.activePayablesList.length
+    ? ls.activePayablesList
+        .map(
+          (p: any, i: number) =>
+            `${i + 1}. **${p.person}** — *${p.title}*\n   - Sisa wajib dibayar: **${p.remainingAmount}** (pokok ${p.amount})\n   - Jatuh tempo: ${p.dueDate}`
+        )
+        .join('\n\n')
+    : '_Tidak ada hutang aktif saat ini! 🎉_';
+
+  if (
+    q.includes('piutang') ||
+    q.includes('receivable') ||
+    q.includes('tagih') ||
+    q.includes('pinjam')
+  ) {
+    return `### 💰 Ringkasan Piutang Anda (Hak Tagih)\n\n- **Total sisa piutang belum diterima**: **${ls.remainingReceivables}**\n- **Jumlah debitur aktif**: ${ls.activeReceivablesCount}\n\n---\n\n#### 📋 Rincian Peminjam:\n${receivablesMd}\n\n💡 **Tips**: Gunakan fitur pengingat WhatsApp di menu Hutang & Piutang sebelum jatuh tempo tiba.`;
+  }
+
+  if (
+    q.includes('hutang') ||
+    q.includes('utang') ||
+    q.includes('payable') ||
+    q.includes('cicilan') ||
+    q.includes('kewajiban')
+  ) {
+    return `### 💳 Ringkasan Hutang Anda (Kewajiban)\n\n- **Total sisa hutang wajib dibayar**: **${ls.remainingPayables}**\n- **Jumlah pinjaman aktif**: ${ls.activePayablesCount}\n- **Melewati jatuh tempo**: ${ls.overdueLoansCount}\n\n---\n\n#### 📋 Rincian Hutang:\n${payablesMd}\n\n💡 **Strategi**: Lunasi dulu hutang dengan jatuh tempo terdekat atau nominal terkecil (*Metode Snowball*).`;
+  }
+
+  if (
+    q.includes('analisis') ||
+    q.includes('kesehatan') ||
+    q.includes('arus kas') ||
+    q.includes('saldo') ||
+    q.includes('keuangan saya')
+  ) {
+    const health =
+      ctx.savingsRate >= 20 ? '🟢 Sangat Sehat' : ctx.savingsRate >= 5 ? '🟡 Cukup Baik' : '🔴 Perlu Perhatian';
+    return `### 📊 Analisis Keuangan ${ctx.userName}\n\n- 💼 **Total Saldo**: ${ctx.totalBalance}\n- ⬆️ **Pemasukan bulan ini**: ${ctx.monthlyIncome}\n- ⬇️ **Pengeluaran bulan ini**: ${ctx.monthlyExpense}\n- 💵 **Arus kas bersih**: ${ctx.netSavings} (rasio tabungan **${ctx.savingsRate}%**)\n- 🧾 **Tagihan belum lunas**: ${ctx.unpaidBillsCount}\n- ⚖️ **Posisi bersih hutang-piutang**: ${ls.netLoanPosition}\n\n**Kesehatan Finansial**: ${health}\n\n💡 ${ctx.savingsRate >= 20 ? 'Pertahankan disiplin menabung Anda, pertimbangkan instrumen investasi berisiko rendah.' : 'Coba kurangi pengeluaran non-esensial dan terapkan anggaran 50/30/20 untuk memperbaiki rasio tabungan.'}`;
+  }
+
+  if (q.includes('budget') || q.includes('anggaran') || q.includes('strategi') || q.includes('hemat')) {
+    return `### 💡 Strategi Budgeting 50/30/20\n\nBerdasarkan pemasukan Anda (${ctx.monthlyIncome}):\n\n- 🏠 **50% Kebutuhan** — makan, transportasi, tagihan (${ctx.unpaidBillsCount} tagihan aktif prioritaskan!)\n- 🎯 **30% Keinginan** — hiburan, jajan\n- 🐖 **20% Tabungan & Pelunasan Hutang** — target minimal **${ls.remainingPayables !== 'Rp 0' ? 'alokasikan untuk cicilan hutang' : 'dana darurat 6x pengeluaran'}**\n\nRasio tabungan Anda saat ini: **${ctx.savingsRate}%**. ${ctx.savingsRate >= 20 ? 'Sudah bagus, pertahankan! 👍' : 'Tingkatkan bertahap 1-2% tiap bulan.'}`;
+  }
+
+  if (q.includes('valas') || q.includes('mata uang') || q.includes('kurs')) {
+    return `### 💱 Tips Pembukuan Multi-Mata Uang\n\n1. **Satukan laporan dalam 1 mata uang utama** (saat ini: ${ctx.currency}) agar arus kas mudah dibaca — aplikasi sudah mengonversi otomatis dengan kurs live.\n2. **Catat transaksi di mata uang aslinya**, biarkan sistem mengonversi ke ${ctx.currency}.\n3. **Pantau fluktuasi kurs** sebelum pembayaran besar lintas negara.\n4. Total saldo lintas rekening Anda saat ini setara **${ctx.totalBalance}**.`;
+  }
+
+  return `Halo ${ctx.userName}! 👋 Berikut ringkasan keuangan Anda:\n\n- 💼 **Saldo**: ${ctx.totalBalance}\n- ⬆️ **Masuk bulan ini**: ${ctx.monthlyIncome} | ⬇️ **Keluar**: ${ctx.monthlyExpense}\n- 💰 **Sisa piutang**: ${ls.remainingReceivables} | 💳 **Sisa hutang**: ${ls.remainingPayables}\n- 🧾 **Tagihan aktif**: ${ctx.unpaidBillsCount}\n\nSilakan tanyakan spesifik, misalnya _"total piutang saya"_, _"status hutang"_, _"analisis keuangan"_, atau _"strategi budgeting"_.`;
+}
+
 export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }> = ({
   isEmbedded = false,
   onClose,
@@ -235,21 +326,36 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
         },
       };
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: textToSend,
-          history: messages.map(m => ({ role: m.role, text: m.text })),
-          financialContext,
-        }),
-      });
+      let data: any;
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: textToSend,
+            history: messages.map(m => ({ role: m.role, text: m.text })),
+            financialContext,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error('Gagal menghubungi server asisten AI.');
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok || !contentType.includes('application/json')) {
+          // Hosting statis / backend tidak tersedia → gunakan mesin analisis lokal
+          data = {
+            reply: buildLocalAiReply(textToSend, financialContext),
+            model: 'Analisis Lokal',
+          };
+        } else {
+          data = await response.json();
+          if (!data?.reply) {
+            data = { reply: buildLocalAiReply(textToSend, financialContext), model: 'Analisis Lokal' };
+          }
+        }
+      } catch {
+        // Jaringan gagal total → tetap jawab dengan analisis lokal
+        data = { reply: buildLocalAiReply(textToSend, financialContext), model: 'Analisis Lokal' };
       }
 
-      const data = await response.json();
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: 'model',
@@ -262,7 +368,7 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
       const errorMsg: ChatMessage = {
         id: `err-${Date.now()}`,
         role: 'model',
-        text: `⚠️ Maaf, terjadi sedikit kendala koneksi AI (${err.message || 'Error'}). Silakan coba tanyakan kembali!`,
+        text: `⚠️ Maaf, terjadi kendala memproses pertanyaan (${err.message || 'Error'}). Silakan coba tanyakan kembali!`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages(prev => [...prev, errorMsg]);

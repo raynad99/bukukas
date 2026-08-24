@@ -93,6 +93,27 @@ export interface ServerBusinessMessage {
   source?: 'in-app' | 'gmail-web' | 'inbound-webhook' | 'api-simulator';
 }
 
+// In-memory ACCOUNT REGISTRY (public profiles only — passwords are NEVER stored here)
+// Makes self-registered accounts visible to the Dev Portal from any device/browser.
+interface ServerAccountRecord {
+  id: string;
+  name: string;
+  email: string;
+  photoUrl?: string;
+  provider: string;
+  role: string;
+  plan: string;
+  status?: string;
+  registeredSelf: boolean;
+  createdAt: string;
+  lastLoginAt: string;
+  trialExpiresDate?: string;
+  paidExpiresDate?: string;
+  customNotes?: string;
+  syncedAt: string;
+}
+const inMemoryServerAccounts = new Map<string, ServerAccountRecord>();
+
 const inMemoryServerMessages: ServerBusinessMessage[] = [
   {
     id: 'msg-srv-welcome',
@@ -136,6 +157,58 @@ async function startServer() {
       activeServerMessagesCount: inMemoryServerMessages.length,
       capabilities: ["inbound-email-receiver", "gmail-dispatcher", "license-manager", "rates-proxy"],
     });
+  });
+
+  // Account Registry - list all registered accounts (Dev Portal + isolation sync)
+  app.get("/api/accounts", (req, res) => {
+    const accounts = Array.from(inMemoryServerAccounts.values()).sort(
+      (a, b) => new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime()
+    );
+    res.json({ success: true, total: accounts.length, accounts });
+  });
+
+  // Account Registry - upsert one account or a batch: { account } | { accounts: [...] }
+  // Passwords and other secrets are stripped before persisting.
+  app.post("/api/accounts/upsert", (req, res) => {
+    try {
+      const incoming: any[] = req.body?.accounts || (req.body?.account ? [req.body.account] : []);
+      if (!Array.isArray(incoming) || incoming.length === 0) {
+        return res.status(400).json({ error: "Field 'account' or 'accounts' array is required." });
+      }
+
+      let upserted = 0;
+      for (const raw of incoming) {
+        if (!raw?.id || !raw?.email) continue;
+        inMemoryServerAccounts.set(String(raw.id), {
+          id: String(raw.id),
+          name: String(raw.name || raw.email.split("@")[0]),
+          email: String(raw.email).toLowerCase(),
+          photoUrl: raw.photoUrl ? String(raw.photoUrl) : undefined,
+          provider: String(raw.provider || "password"),
+          role: String(raw.role || "user"),
+          plan: String(raw.plan || "trial"),
+          status: raw.status ? String(raw.status) : undefined,
+          registeredSelf: Boolean(raw.registeredSelf),
+          createdAt: String(raw.createdAt || new Date().toISOString()),
+          lastLoginAt: String(raw.lastLoginAt || "-"),
+          trialExpiresDate: raw.trialExpiresDate ? String(raw.trialExpiresDate) : undefined,
+          paidExpiresDate: raw.paidExpiresDate ? String(raw.paidExpiresDate) : undefined,
+          customNotes: typeof raw.customNotes === "string" && !raw.customNotes.toLowerCase().includes("password")
+            ? String(raw.customNotes)
+            : undefined,
+          syncedAt: new Date().toISOString(),
+        });
+        upserted += 1;
+      }
+
+      return res.json({
+        success: true,
+        upserted,
+        total: inMemoryServerAccounts.size,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || "Account registry error" });
+    }
   });
 
   // Business Email - Get all server stored messages

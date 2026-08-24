@@ -392,12 +392,12 @@ interface AppContextType {
   // Authentication & Profile (Gmail + Email/Password)
   currentUser: UserProfile | null;
   savedUsers: UserProfile[];
-  loginWithGoogle: (presetEmail?: string, presetName?: string) => Promise<boolean>;
+  loginWithGoogle: (presetEmail?: string, presetName?: string, intent?: 'login' | 'register') => Promise<boolean>;
   loginWithEmail: (email: string, password?: string) => Promise<boolean>;
   registerWithEmail: (name: string, email: string, password?: string) => Promise<boolean>;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
-  switchAccount: (userId: string) => void;
+  switchAccount: (userId: string, password?: string) => boolean;
   updateProfile: (profile: Partial<UserProfile>) => void;
   deleteSavedAccount: (userId: string) => void;
 
@@ -932,43 +932,128 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
+  // --- Server Account Registry Sync ---
+  // Public profiles only: passwords NEVER leave this browser.
+  const stripAccountSecrets = (u: UserProfile): Partial<UserProfile> => {
+    const { password, ...publicProfile } = u;
+    return publicProfile;
+  };
+
+  const pushAccountsToServer = async (users: UserProfile[]) => {
+    try {
+      if (!users.length) return;
+      await fetch('/api/accounts/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accounts: users.map(stripAccountSecrets) }),
+      });
+    } catch {
+      // Offline fallback: keep working locally
+    }
+  };
+
+  const pullAccountsFromServer = async () => {
+    try {
+      const res = await fetch('/api/accounts');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.accounts) && data.accounts.length > 0) {
+        setAllRegisteredAccounts(prev => {
+          const map = new Map<string, UserProfile>();
+          prev.forEach(u => map.set(u.id, u));
+          data.accounts.forEach((srv: any) => {
+            // Local profile always wins on conflict (richer + has credentials)
+            if (!map.has(srv.id)) map.set(srv.id, srv as UserProfile);
+          });
+          return Array.from(map.values());
+        });
+      }
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  useEffect(() => {
+    pullAccountsFromServer();
+    const intervalId = setInterval(pullAccountsFromServer, 15000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    if (allRegisteredAccounts.length > 0) {
+      pushAccountsToServer(allRegisteredAccounts);
+    }
+  }, [allRegisteredAccounts]);
+
   // Auth Operations
-  const loginWithGoogle = async (presetEmail?: string, presetName?: string): Promise<boolean> => {
-    const targetEmail = presetEmail?.trim() || 'indoclickshop@gmail.com';
-    if (!targetEmail || !targetEmail.includes('@')) {
+  const loginWithGoogle = async (
+    presetEmail?: string,
+    presetName?: string,
+    intent: 'login' | 'register' = 'login'
+  ): Promise<boolean> => {
+    const targetEmail = presetEmail?.trim().toLowerCase() || '';
+    if (!targetEmail || !targetEmail.includes('@') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
       addNotification('error', 'Email Tidak Valid', 'Silakan masukkan alamat Gmail yang valid.');
       return false;
     }
 
-    const isDev = targetEmail.toLowerCase() === 'admin@bukukas.ai.studio' || targetEmail.toLowerCase() === 'indoclickshop@gmail.com';
-    const existing = allRegisteredAccounts.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
-    
+    // KEAMANAN: akun developer/superadmin TIDAK bisa dimasuki lewat simulasi SSO
+    // (sebelumnya siapa pun bisa mengetik email admin dan langsung jadi admin!)
+    const isDevAccount =
+      targetEmail === 'admin@bukukas.ai.studio' || targetEmail === 'indoclickshop@gmail.com';
+    if (isDevAccount) {
+      addNotification(
+        'error',
+        'Akses Developer Terproteksi 🔒',
+        'Akun developer hanya dapat diakses melalui Portal Developer dengan kata sandi.'
+      );
+      throw new Error('Akun developer hanya bisa diakses melalui Portal Developer (kata sandi wajib).');
+    }
+
+    const existing = allRegisteredAccounts.find(u => u.email.toLowerCase() === targetEmail);
+
+    // Konsistensi intent: Login ≠ Register
+    if (existing && intent === 'register') {
+      addNotification('error', 'Email Sudah Terdaftar 🚫', `${targetEmail} sudah terdaftar. Gunakan mode Masuk (Login).`);
+      throw new Error('Email sudah terdaftar. Silakan gunakan mode Masuk (Login).');
+    }
+    if (!existing && intent === 'login') {
+      addNotification('error', 'Akun Belum Terdaftar 📝', `${targetEmail} belum terdaftar. Silakan daftar terlebih dahulu.`);
+      throw new Error('Akun Google ini belum terdaftar. Silakan gunakan mode Daftar Akun Baru terlebih dahulu.');
+    }
+
     const displayName = presetName?.trim() || existing?.name || targetEmail.split('@')[0].replace('.', ' ').toUpperCase();
+
+    // Password acak untuk akun SSO baru — BUKAN lagi hardcoded 'Median1986'
+    // (bug lama: semua akun Google bisa ditebak sandinya oleh siapa saja)
+    const ssoPassword =
+      existing?.password ||
+      'gss-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 
     const user: UserProfile = existing
       ? {
           ...existing,
           name: presetName?.trim() || existing.name,
-          password: existing.password || 'Median1986',
+          password: existing.password || ssoPassword,
           lastLoginAt: 'Baru saja (Google SSO)',
         }
       : {
           id: 'usr-gmail-' + Date.now().toString().slice(-4),
           name: displayName,
           email: targetEmail,
-          password: 'Median1986',
+          password: ssoPassword,
           photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=10b981&color=fff`,
           provider: 'gmail',
           isVerified: true,
-          role: isDev ? 'admin' : 'user',
-          plan: isDev ? 'lifetime' : 'trial',
+          role: 'user',
+          plan: 'trial',
           trialStartDate: new Date().toISOString(),
           trialExpiresDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          registeredSelf: !isDev,
-          status: isDev ? 'active' : 'trial',
+          registeredSelf: true,
+          status: 'trial',
           createdAt: new Date().toISOString().slice(0, 10),
           lastLoginAt: 'Baru saja (Google SSO)',
-          customNotes: isDev ? 'Akun Developer / Superadmin (Google SSO)' : 'Register mandiri via Google SSO',
+          customNotes: 'Register mandiri via Google SSO (Trial 7 hari otomatis)',
         };
 
     const updatedUser = { ...user, lastLoginAt: 'Baru saja (Google SSO)' };
@@ -1051,6 +1136,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const registerWithEmail = async (name: string, email: string, _password?: string): Promise<boolean> => {
     const isDev = email.toLowerCase() === 'admin@bukukas.ai.studio' || email.toLowerCase() === 'indoclickshop@gmail.com';
+
+    // SECURITY / ISOLATION: reject duplicate registration instead of silently
+    // overwriting an existing account (old bug let anyone hijack any email).
+    if (allRegisteredAccounts.some(u => u.email.toLowerCase() === email.trim().toLowerCase())) {
+      addNotification(
+        'error',
+        'Email Sudah Terdaftar 🚫',
+        `${email} sudah terdaftar di sistem. Silakan gunakan menu Masuk (Login) atau daftar dengan email lain.`
+      );
+      throw new Error('Email sudah terdaftar. Silakan masuk (Login) dengan akun tersebut atau gunakan email lain.');
+    }
     
     const newUser: UserProfile = {
       id: 'usr-reg-' + Date.now().toString().slice(-4),
@@ -1195,12 +1291,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const switchAccount = (userId: string) => {
+  const switchAccount = (userId: string, password?: string): boolean => {
     const user = allRegisteredAccounts.find(u => u.id === userId) || savedUsers.find(u => u.id === userId);
-    if (user) {
-      setCurrentUser(user);
-      addNotification('success', 'Beralih Akun', `Aktif sebagai ${user.name} (${user.email} - ${user.plan.toUpperCase()}).`);
+    if (!user) return false;
+
+    // SECURITY: switching into another account requires that account's kata sandi.
+    // Prevents anyone on a shared device from hijacking other sessions (incl. admin).
+    if (!password || !user.password || password !== user.password) {
+      addNotification(
+        'error',
+        'Verifikasi Diperlukan 🔒',
+        `Kata sandi akun ${user.email} salah atau kosong. Gunakan menu Masuk (Login) untuk sesi baru.`
+      );
+      return false;
     }
+
+    setCurrentUser(user);
+    addNotification('success', 'Beralih Akun', `Aktif sebagai ${user.name} (${user.email} - ${user.plan.toUpperCase()}).`);
+    return true;
   };
 
   const updateProfile = (profile: Partial<UserProfile>) => {

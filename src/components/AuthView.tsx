@@ -194,6 +194,11 @@ export const AuthView: React.FC = () => {
     }
   };
 
+  // Email verification state
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailSentTo, setEmailSentTo] = useState('');
+  const [verificationLoading, setVerificationLoading] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -216,12 +221,76 @@ export const AuthView: React.FC = () => {
           setIsLoading(false);
           return;
         }
-        await registerWithEmail(name.trim(), email.trim(), password);
+        // Send verification email first
+        setVerificationLoading(true);
+        try {
+          const res = await fetch('/api/auth/send-verification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email.trim(), name: name.trim() }),
+          });
+          const data = await res.json();
+          
+          if (data.alreadyVerified) {
+            // Email already verified, just register
+            await registerWithEmail(name.trim(), email.trim(), password);
+          } else if (data.devMode) {
+            // Dev mode - auto verify and register
+            await registerWithEmail(name.trim(), email.trim(), password);
+          } else if (data.success) {
+            // Show verification sent screen
+            setEmailSent(true);
+            setEmailSentTo(email.trim());
+            setIsLoading(false);
+            setVerificationLoading(false);
+            return;
+          } else {
+            setErrorMessage(data.error || 'Gagal mengirim email verifikasi.');
+            setIsLoading(false);
+            setVerificationLoading(false);
+            return;
+          }
+        } catch (err) {
+          // If email service fails, auto-register for dev mode
+          console.warn('Email verification failed, auto-registering for dev mode');
+          await registerWithEmail(name.trim(), email.trim(), password);
+        }
+        setVerificationLoading(false);
       } else {
         await loginWithEmail(email.trim(), password);
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Terjadi kesalahan saat memproses akun.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Resend verification email
+  const handleResendVerification = async () => {
+    if (!emailSentTo) return;
+    setVerificationLoading(true);
+    try {
+      await fetch('/api/auth/send-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailSentTo, name: name.trim() }),
+      });
+      addNotification('success', 'Email Terkirim Lagi', `Email verifikasi baru telah dikirim ke ${emailSentTo}.`);
+    } catch {
+      addNotification('error', 'Gagal Mengirim', 'Tidak dapat mengirim ulang email verifikasi.');
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  // Skip verification (for testing/dev)
+  const handleSkipVerification = async () => {
+    setIsLoading(true);
+    try {
+      await registerWithEmail(name.trim(), emailSentTo, password);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal mendaftarkan akun.');
     } finally {
       setIsLoading(false);
     }

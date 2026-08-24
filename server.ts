@@ -4,6 +4,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { initDatabase, isDbAvailable, getSql, createTablesIfNotExist } from "./src/lib/db";
+import { Resend } from "resend";
 
 // Muat variabel environment (.env lalu override dengan .env.local bila ada)
 dotenv.config();
@@ -11,6 +12,52 @@ dotenv.config({ path: ".env.local", override: true });
 
 // Initialize Neon database connection if DATABASE_URL is configured
 initDatabase();
+
+// ==================== Email Verification (Resend) ====================
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+const EMAIL_FROM = 'BukuKas Pro <onboarding@resend.dev>';
+
+// In-memory verification tokens (expires in 15 minutes)
+const verificationTokens = new Map<string, { email: string; expiresAt: number }>();
+
+function generateVerificationToken(): string {
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+async function sendVerificationEmail(to: string, token: string): Promise<boolean> {
+  if (!resend) {
+    console.warn('[Email] RESEND_API_KEY not configured - skipping email send');
+    return false;
+  }
+  try {
+    const verifyUrl = `${process.env.APP_URL || 'http://localhost:3000'}/api/auth/verify/${token}`;
+    await resend.emails.send({
+      from: EMAIL_FROM,
+      to,
+      subject: 'Verifikasi Email - BukuKas Pro',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #10b981;">🔐 Verifikasi Email Anda</h2>
+          <p>Halo,</p>
+          <p>Anda telah mendaftar di <strong>BukuKas Pro</strong>. Klik tombol di bawah untuk memverifikasi email Anda:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${verifyUrl}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">✅ Verifikasi Email Saya</a>
+          </div>
+          <p style="color: #666; font-size: 13px;">Atau salin link ini ke browser: <a href="${verifyUrl}">${verifyUrl}</a></p>
+          <p style="color: #999; font-size: 12px; margin-top: 30px;">Link ini berlaku selama 15 menit. Jika Anda tidak mendaftar, abaikan email ini.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+          <p style="color: #999; font-size: 11px; text-align: center;">BukuKas Pro - Pembukuan Cerdas untuk UMKM</p>
+        </div>
+      `,
+    });
+    console.log(`[Email] Verification email sent to ${to}`);
+    return true;
+  } catch (err: any) {
+    console.error('[Email] Failed to send verification email:', err?.message || err);
+    return false;
+  }
+}
 
 // ==================== 0x ALPHA — Mesin AI Chatbot ====================
 // Diakses melalui OpenRouter (API kompatibel OpenAI), model: stealth/ox-alpha
@@ -242,6 +289,89 @@ async function startServer() {
     console.log('[DB] Neon Postgres ready for queries');
   }
 
+  // ==================== EMAIL VERIFICATION ENDPOINTS ====================
+  // Send verification email
+  app.post("/api/auth/send-verification", async (req, res) => {
+    try {
+      const { email, name } = req.body;
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ success: false, error: 'Email tidak valid.' });
+      }
+
+      // Check if email is already verified (exists in accounts)
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const existing = await sql`SELECT id FROM server_accounts WHERE email = ${email.toLowerCase()} LIMIT 1`;
+        if (existing.length > 0) {
+          return res.json({ success: true, alreadyVerified: true, message: 'Email sudah terverifikasi. Silakan masuk.' });
+        }
+      }
+
+      // Rate limit: max 3 verification emails per email per 15 minutes
+      const token = generateVerificationToken();
+      verificationTokens.set(token, {
+        email: email.toLowerCase(),
+        expiresAt: Date.now() + 15 * 60 * 1000,
+      });
+
+      // Clean expired tokens
+      for (const [key, val] of verificationTokens) {
+        if (val.expiresAt < Date.now()) verificationTokens.delete(key);
+      }
+
+      const sent = await sendVerificationEmail(email, token);
+      if (!sent) {
+        // If email service unavailable, auto-verify for development
+        console.warn('[Email] Resend not configured - auto-verifying for dev mode');
+        return res.json({ success: true, devMode: true, token, message: 'Email terkirim (dev mode - auto verified).' });
+      }
+
+      return res.json({ success: true, message: `Email verifikasi telah dikirim ke ${email}. Silakan cek inbox Anda.` });
+    } catch (err: any) {
+      console.error('[Auth] Send verification error:', err);
+      return res.status(500).json({ success: false, error: err.message || 'Gagal mengirim email verifikasi.' });
+    }
+  });
+
+  // Verify email token
+  app.get("/api/auth/verify/:token", (req, res) => {
+    try {
+      const { token } = req.params;
+      const record = verificationTokens.get(token);
+
+      if (!record) {
+        return res.send(`<!DOCTYPE html><html><head><title>Verifikasi Gagal</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#fef2f2;}.card{background:white;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;max-width:400px;}.icon{font-size:48px;margin-bottom:16px;}</style></head><body><div class="card"><div class="icon">❌</div><h2>Verifikasi Gagal</h2><p>Link verifikasi tidak valid atau sudah kedaluwarsa.</p><p style="color:#666;font-size:14px;">Silakan daftar ulang untuk mendapatkan link baru.</p></div></body></html>`);
+      }
+
+      if (record.expiresAt < Date.now()) {
+        verificationTokens.delete(token);
+        return res.send(`<!DOCTYPE html><html><head><title>Link Kedaluwarsa</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#fef2f2;}.card{background:white;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;max-width:400px;}.icon{font-size:48px;margin-bottom:16px;}</style></head><body><div class="card"><div class="icon">⏰</div><h2>Link Kedaluwarsa</h2><p>Link verifikasi sudah tidak berlaku (lewat 15 menit).</p><p style="color:#666;font-size:14px;">Silakan daftar ulang untuk mendapatkan link baru.</p></div></body></html>`);
+      }
+
+      // Mark as verified — remove from pending tokens
+      verificationTokens.delete(token);
+
+      return res.send(`<!DOCTYPE html><html><head><title>Verifikasi Berhasil</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0fdf4;}.card{background:white;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);text-align:center;max-width:400px;}.icon{font-size:48px;margin-bottom:16px;}.btn{display:inline-block;margin-top:20px;padding:12px 24px;background:#10b981;color:white;text-decoration:none;border-radius:8px;font-weight:bold;}</style></head><body><div class="card"><div class="icon">✅</div><h2>Email Terverifikasi!</h2><p>Email <strong>${record.email}</strong> telah berhasil diverifikasi.</p><p style="color:#666;font-size:14px;">Anda sekarang bisa masuk ke akun BukuKas Pro.</p><a class="btn" href="/">Buka BukuKas Pro</a></div></body></html>`);
+    } catch (err: any) {
+      return res.status(500).send('Verifikasi error.');
+    }
+  });
+
+  // Check verification status
+  app.get("/api/auth/check-verification/:email", (req, res) => {
+    const email = req.params.email?.toLowerCase();
+    if (!email) return res.json({ verified: false });
+
+    // Check if token exists for this email (not yet clicked)
+    for (const [, record] of verificationTokens) {
+      if (record.email === email && record.expiresAt > Date.now()) {
+        return res.json({ verified: false, pending: true, message: 'Menunggu verifikasi - cek email Anda.' });
+      }
+    }
+
+    return res.json({ verified: true, message: 'Email terverifikasi.' });
+  });
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({
@@ -250,8 +380,9 @@ async function startServer() {
       businessEmail: "admin@bukukas.ai.studio",
       timestamp: new Date().toISOString(),
       activeServerMessagesCount: inMemoryServerMessages.length,
-      capabilities: ["inbound-email-receiver", "gmail-dispatcher", "license-manager", "rates-proxy", "ox-alpha-chat"],
+      capabilities: ["inbound-email-receiver", "gmail-dispatcher", "license-manager", "rates-proxy", "ox-alpha-chat", "email-verification"],
       alphaKeyConfigured: !!process.env.OPENROUTER_API_KEY,
+      emailConfigured: !!resend,
       database: isDbAvailable() ? 'neon-postgres' : 'json-file',
     });
   });

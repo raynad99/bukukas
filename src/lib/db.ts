@@ -80,7 +80,16 @@ export async function createTablesIfNotExist(): Promise<void> {
       )
     `;
 
-    console.log('[DB] Tables created/verified: server_accounts, server_messages');
+    await sql`
+      CREATE TABLE IF NOT EXISTS verification_tokens (
+        token TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        created_at TEXT DEFAULT NOW()::TEXT
+      )
+    `;
+
+    console.log('[DB] Tables created/verified: server_accounts, server_messages, verification_tokens');
   } catch (err) {
     console.warn('[DB] Table creation error:', err);
   }

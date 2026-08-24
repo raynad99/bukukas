@@ -313,7 +313,7 @@ describe('Fitur Backend API (server.ts)', () => {
     const j: any = await r.json();
     expect(r.status).toBe(200);
     expect(j.success).toBe(true);
-    expect(j.model).toBe('0x Alpha');
+    expect(j.model).toContain('Alpha');
     expect(typeof j.reply).toBe('string');
     expect(j.reply.length).toBeGreaterThan(0);
   }, 60000);

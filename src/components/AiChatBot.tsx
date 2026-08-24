@@ -216,12 +216,30 @@ function buildLocalAiReply(
     return `### 📊 Analisis Keuangan ${ctx.userName}\n\n- 💼 **Total Saldo**: ${ctx.totalBalance}\n- ⬆️ **Pemasukan bulan ini**: ${ctx.monthlyIncome}\n- ⬇️ **Pengeluaran bulan ini**: ${ctx.monthlyExpense}\n- 💵 **Arus kas bersih**: ${ctx.netSavings} (rasio tabungan **${ctx.savingsRate}%**)\n- 🧾 **Tagihan belum lunas**: ${ctx.unpaidBillsCount}\n- ⚖️ **Posisi bersih hutang-piutang**: ${ls.netLoanPosition}\n\n**Kesehatan Finansial**: ${health}\n\n💡 ${ctx.savingsRate >= 20 ? 'Pertahankan disiplin menabung Anda, pertimbangkan instrumen investasi berisiko rendah.' : 'Coba kurangi pengeluaran non-esensial dan terapkan anggaran 50/30/20 untuk memperbaiki rasio tabungan.'}`;
   }
 
-  if (q.includes('budget') || q.includes('anggaran') || q.includes('strategi') || q.includes('hemat')) {
-    return `### 💡 Strategi Budgeting 50/30/20\n\nBerdasarkan pemasukan Anda (${ctx.monthlyIncome}):\n\n- 🏠 **50% Kebutuhan** — makan, transportasi, tagihan (${ctx.unpaidBillsCount} tagihan aktif prioritaskan!)\n- 🎯 **30% Keinginan** — hiburan, jajan\n- 🐖 **20% Tabungan & Pelunasan Hutang** — target minimal **${ls.remainingPayables !== 'Rp 0' ? 'alokasikan untuk cicilan hutang' : 'dana darurat 6x pengeluaran'}**\n\nRasio tabungan Anda saat ini: **${ctx.savingsRate}%**. ${ctx.savingsRate >= 20 ? 'Sudah bagus, pertahankan! 👍' : 'Tingkatkan bertahap 1-2% tiap bulan.'}`;
+  // Intent: VALAS / MULTI-MATA UANG — HARUS sebelum budget agar pertanyaan
+  // "strategi ... multi mata uang" tidak tertangkap keyword generik 'strategi'
+  if (
+    q.includes('valas') ||
+    q.includes('mata uang') ||
+    q.includes('multicurrency') ||
+    q.includes('multi-currency') ||
+    q.includes('kurs') ||
+    q.includes('konversi') ||
+    /\b(idr|nzd|usd|sgd|aud|eur|gbp|jpy|myr|hkd|twd|krw)\b/.test(q)
+  ) {
+    return `### 💱 Tips Pembukuan Multi-Mata Uang\n\n1. **Satukan laporan dalam 1 mata uang utama** (saat ini: ${ctx.currency}) agar arus kas mudah dibaca — aplikasi sudah mengonversi otomatis dengan kurs live.\n2. **Catat transaksi di mata uang aslinya**, biarkan sistem mengonversi ke ${ctx.currency}.\n3. **Pantau fluktuasi kurs** sebelum pembayaran besar lintas negara.\n4. Total saldo lintas rekening Anda saat ini setara **${ctx.totalBalance}**.`;
   }
 
-  if (q.includes('valas') || q.includes('mata uang') || q.includes('kurs')) {
-    return `### 💱 Tips Pembukuan Multi-Mata Uang\n\n1. **Satukan laporan dalam 1 mata uang utama** (saat ini: ${ctx.currency}) agar arus kas mudah dibaca — aplikasi sudah mengonversi otomatis dengan kurs live.\n2. **Catat transaksi di mata uang aslinya**, biarkan sistem mengonversi ke ${ctx.currency}.\n3. **Pantau fluktuasi kurs** sebelum pembayaran besar lintas negara.\n4. Total saldo lintas rekening Anda saat ini setara **${ctx.totalBalance}**.`;
+  // Intent: BUDGETING (setelah valas agar keyword generik 'strategi' tidak
+  // menangkap pertanyaan multi-mata uang)
+  if (
+    q.includes('budget') ||
+    q.includes('anggaran') ||
+    q.includes('50/30/20') ||
+    q.includes('hemat') ||
+    q.includes('strategi')
+  ) {
+    return `### 💡 Strategi Budgeting 50/30/20\n\nBerdasarkan pemasukan Anda (${ctx.monthlyIncome}):\n\n- 🏠 **50% Kebutuhan** — makan, transportasi, tagihan (${ctx.unpaidBillsCount} tagihan aktif prioritaskan!)\n- 🎯 **30% Keinginan** — hiburan, jajan\n- 🐖 **20% Tabungan & Pelunasan Hutang** — target minimal **${ls.remainingPayables !== 'Rp 0' ? 'alokasikan untuk cicilan hutang' : 'dana darurat 6x pengeluaran'}**\n\nRasio tabungan Anda saat ini: **${ctx.savingsRate}%**. ${ctx.savingsRate >= 20 ? 'Sudah bagus, pertahankan! 👍' : 'Tingkatkan bertahap 1-2% tiap bulan.'}`;
   }
 
   return `Halo ${ctx.userName}! 👋 Berikut ringkasan keuangan Anda:\n\n- 💼 **Saldo**: ${ctx.totalBalance}\n- ⬆️ **Masuk bulan ini**: ${ctx.monthlyIncome} | ⬇️ **Keluar**: ${ctx.monthlyExpense}\n- 💰 **Sisa piutang**: ${ls.remainingReceivables} | 💳 **Sisa hutang**: ${ls.remainingPayables}\n- 🧾 **Tagihan aktif**: ${ctx.unpaidBillsCount}\n\nSilakan tanyakan spesifik, misalnya _"total piutang saya"_, _"status hutang"_, _"analisis keuangan"_, atau _"strategi budgeting"_.`;

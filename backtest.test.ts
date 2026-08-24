@@ -252,6 +252,22 @@ describe('Fitur Backend API (server.ts)', () => {
     expect(j.reply.length).toBeGreaterThan(20);
   });
 
+  test('REGRESI INTENT CHAT: pertanyaan multi-mata uang tidak salah masuk budgeting', async () => {
+    const r = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Bagaimana strategi terbaik mengelola pembukuan dengan multi mata uang (IDR, NZD, USD, TWD, HKD, SGD)?',
+        financialContext: { monthlyIncome: 'Rp 24.700.000', savingsRate: 89, unpaidBillsCount: 3 },
+      }),
+    });
+    const j: any = await r.json();
+    expect(r.status).toBe(200);
+    // Harus terdeteksi sebagai topik VALAS/multi-currency, bukan budgeting
+    expect(j.reply.toLowerCase()).toMatch(/valuta asing|multi-mata uang|multi-currency|valas/);
+    expect(j.reply).not.toContain('Budgeting 50/30/20');
+  });
+
   test('REGRESI INTENT CHAT: "tagihan" tidak salah dijawab sebagai piutang', async () => {
     const r = await fetch(`${BASE}/api/chat`, {
       method: 'POST',

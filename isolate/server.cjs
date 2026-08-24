@@ -324,6 +324,10 @@ KONTEKS FINANSIAL REAL-TIME PENGGUNA BUKUKAS PRO:
 - Pengeluaran Bulan Ini: ${financialContext.monthlyExpense || "0"}
 - Tabungan Bersih: ${financialContext.netSavings || "0"} (${financialContext.savingsRate || 0}% rasio tabungan)
 - Tagihan Rutin Belum Lunas: ${financialContext.unpaidBillsCount || 0} tagihan
+${Array.isArray(financialContext.unpaidBillsList) && financialContext.unpaidBillsList.length > 0 ? `- Daftar Tagihan Belum Lunas (urut jatuh tempo):
+${financialContext.unpaidBillsList.map((b) => `   * ${b.title}: ${b.amount} | Jatuh tempo ${b.dueDate}${b.isOverdue ? " (TERLAMBAT)" : ""}`).join("\n")}` : "- Semua tagihan sudah lunas"}
+${Array.isArray(financialContext.topExpenseCategories) && financialContext.topExpenseCategories.length > 0 ? `- Breakdown Pengeluaran per Kategori (bulan ini):
+${financialContext.topExpenseCategories.map((c) => `   * ${c.name}: ${c.amount} (${c.percent}%)`).join("\n")}` : ""}
 
 RINGKASAN MODUL HUTANG & PIUTANG (LIABILITIES & ASSETS):
 1. PIUTANG (RECEIVABLES / UANG PENGGUNA YANG DIPINJAM ORANG LAIN / HAK TAGIH):
@@ -392,7 +396,55 @@ ${contextDescription}`;
       }
       const lowerQuery = message.toLowerCase();
       let fallbackReply = "";
-      if (lowerQuery.includes("piutang") || lowerQuery.includes("receivable") || lowerQuery.includes("siapa yang pinjam") || lowerQuery.includes("siapa yang ngutang") || lowerQuery.includes("orang pinjam") || lowerQuery.includes("hak tagih") || lowerQuery.includes("tagih")) {
+      if (/^(halo|hai|hi|hei|hey|assalam|pagi|siang|sore|malam)[\s!,.?]*$/.test(lowerQuery) || lowerQuery.includes("apa kabar") || lowerQuery.includes("terima kasih") || lowerQuery.includes("makasih") || lowerQuery === "thanks") {
+        fallbackReply = `Halo ${financialContext?.userName || "Kak"}! \u{1F44B} Saya **Asisten Keuangan BukuKas** dan siap membantu Anda kapan saja.
+
+Beberapa hal yang bisa langsung Anda tanyakan:
+- \u{1F9FE} _"Tagihan apa saja yang belum dibayar?"_
+- \u{1F4B0} _"Total piutang saya?"_
+- \u{1F4B3} _"Status hutang & cicilan?"_
+- \u2B07\uFE0F _"Berapa pengeluaran bulan ini?"_ | \u2B06\uFE0F _"Pemasukan bulan ini?"_
+- \u{1F4CA} _"Analisis keuangan saya"_ | \u{1F4A1} _"Strategi budgeting"_ | \u{1F4B1} _"Tips valas"_`;
+      } else if (lowerQuery.includes("tagihan") || lowerQuery.includes("bill") && !lowerQuery.includes("hutang") || lowerQuery.includes("listrik") || lowerQuery.includes("internet") || lowerQuery.includes("langganan") || lowerQuery.includes("iuran")) {
+        const unpaidBills = Array.isArray(financialContext?.unpaidBillsList) ? financialContext.unpaidBillsList : [];
+        const billsMd = unpaidBills.length > 0 ? unpaidBills.map(
+          (b, i) => `${i + 1}. **${b.title}** \u2014 **${b.amount}** | Jatuh tempo: **${b.dueDate}**${b.isOverdue ? " \u26A0\uFE0F *TERLAMBAT*" : ""} (${b.recurrence})`
+        ).join("\n") : "_Semua tagihan sudah lunas! \u{1F389} Tidak ada yang perlu dibayar._";
+        const hasOverdue = unpaidBills.some((b) => b.isOverdue);
+        fallbackReply = `### \u{1F9FE} Tagihan Belum Lunas (${unpaidBills.length})
+
+${billsMd}
+
+\u{1F4A1} ${hasOverdue ? "**Ada tagihan terlambat** \u2014 segera bayar untuk menghindari denda!" : "Semua masih dalam batas waktu. Aktifkan auto-debit di menu Tagihan agar tidak terlewat."}`;
+      } else if (lowerQuery.includes("pengeluaran") || lowerQuery.includes("pengeluar") || lowerQuery.includes("belanja") || lowerQuery.includes("expense") || lowerQuery.includes("laporan") && !lowerQuery.includes("pemasukan")) {
+        const cats = Array.isArray(financialContext?.topExpenseCategories) ? financialContext.topExpenseCategories : [];
+        const catMd = cats.length > 0 ? cats.map((c) => `- **${c.name}**: ${c.amount} (${c.percent}% dari total)`).join("\n") : "_Belum ada pengeluaran tercatat bulan ini._";
+        fallbackReply = `### \u2B07\uFE0F Pengeluaran Bulan Ini
+
+- **Total**: **${financialContext?.monthlyExpense || "Rp 0"}**
+- Dibanding pemasukan: ${financialContext?.monthlyIncome || "Rp 0"} \u2192 arus kas bersih **${financialContext?.netSavings || "Rp 0"}** (rasio tabungan ${financialContext?.savingsRate || 0}%)
+
+#### \u{1F4C2} Breakdown Kategori Terbesar:
+${catMd}
+
+\u{1F4A1} ${cats.length > 0 ? `Kategori terbesar adalah **${cats[0].name}** (${cats[0].percent}%). Jika ingin hemat, mulai review dari sini.` : "Mulai catat transaksi Anda agar analisis makin akurat."}`;
+      } else if (lowerQuery.includes("pemasukan") || lowerQuery.includes("pendapatan") || lowerQuery.includes("income") || lowerQuery.includes("gaji") || lowerQuery.includes("uang masuk")) {
+        fallbackReply = `### \u2B06\uFE0F Pemasukan Bulan Ini
+
+- **Total**: **${financialContext?.monthlyIncome || "Rp 0"}**
+- Pengeluaran: ${financialContext?.monthlyExpense || "Rp 0"} \u2192 surplus/defisit **${financialContext?.netSavings || "Rp 0"}**
+- Rasio tabungan: **${financialContext?.savingsRate || 0}%** ${(financialContext?.savingsRate || 0) >= 20 ? "\u{1F7E2} (sudah sehat)" : (financialContext?.savingsRate || 0) >= 5 ? "\u{1F7E1} (cukup)" : "\u{1F534} (perlu ditingkatkan)"}
+
+\u{1F4A1} Idealnya sisihkan minimal 20% pemasukan untuk tabungan/dana darurat.`;
+      } else if (lowerQuery.includes("saldo") || lowerQuery.includes("balance") || lowerQuery.includes("kekayaan") || lowerQuery.includes("total uang") || lowerQuery.includes("uang saya")) {
+        fallbackReply = `### \u{1F4BC} Saldo & Kekayaan Anda
+
+- **Total Saldo Seluruh Rekening**: **${financialContext?.totalBalance || "Rp 0"}**
+- \u2B06\uFE0F Masuk bulan ini: ${financialContext?.monthlyIncome || "Rp 0"} | \u2B07\uFE0F Keluar: ${financialContext?.monthlyExpense || "Rp 0"}
+- \u2696\uFE0F Ditambah sisa piutang ${ls.remainingReceivables || "Rp 0"}, dikurangi sisa hutang ${ls.remainingPayables || "Rp 0"}
+
+\u{1F4A1} Pastikan ada dana darurat minimal 3\u20136\xD7 pengeluaran bulanan (${financialContext?.monthlyExpense || "Rp 0"}).`;
+      } else if (lowerQuery.includes("piutang") || lowerQuery.includes("receivable") || lowerQuery.includes("siapa yang pinjam") || lowerQuery.includes("siapa yang ngutang") || lowerQuery.includes("orang pinjam") || lowerQuery.includes("dipinjam") || lowerQuery.includes("hak tagih") || lowerQuery.includes("uang di luar")) {
         const activeReceivables = Array.isArray(ls.activeReceivablesList) ? ls.activeReceivablesList : [];
         let listMarkdown = "";
         if (activeReceivables.length > 0) {

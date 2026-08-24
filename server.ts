@@ -646,8 +646,27 @@ ${Number(ls.overdueLoansCount || 0) > 0 ? `⚠️ **Perhatian**: Terdapat ${ls.o
 
 Buka menu **Hutang & Piutang** di navigasi untuk mencatat pembayaran parsial, pelunasan penuh, atau menambah data pinjaman baru.`;
       }
-      // Intent 4: Budgeting 50/30/20
-      else if (lowerQuery.includes("50/30/20") || lowerQuery.includes("budget") || lowerQuery.includes("anggaran")) {
+      // Intent 4: Valas & Multi-Mata Uang — HARUS sebelum budget agar
+      // pertanyaan "strategi ... multi mata uang (IDR, NZD, ...)" tidak salah masuk budget/analisis
+      else if (
+        lowerQuery.includes("valas") ||
+        lowerQuery.includes("kurs") ||
+        lowerQuery.includes("mata uang") ||
+        lowerQuery.includes("multicurrency") ||
+        lowerQuery.includes("multi-currency") ||
+        lowerQuery.includes("konversi") ||
+        /\b(idr|nzd|usd|sgd|aud|eur|gbp|jpy|myr|hkd|twd|krw)\b/.test(lowerQuery)
+      ) {
+        fallbackReply = `### 💱 Strategi Pembukuan Multi-Mata Uang (IDR, NZD, USD, TWD, HKD, SGD)
+
+1. **Satukan Laporan dalam 1 Mata Uang Utama**: Pilih satu mata uang pelaporan (saat ini: **${financialContext?.currency || 'IDR'}**) agar arus kas mudah dibaca — BukuKas Pro mengonversi otomatis dengan kurs live real-time.
+2. **Catat di Mata Uang Aslinya**: Setiap transaksi valas dicatat sesuai nominal aslinya (NZD untuk gaji NZ, SGD untuk belanja Singapura, dst.), biarkan sistem yang mengonversi ke ${financialContext?.currency || 'IDR'}.
+3. **Pantau Fluktuasi Kurs**: Sebelum pembayaran besar lintas negara atau konversi nominal besar, periksa tab **Kurs Valas** di menu atas untuk melihat selisih nilai tukar harian dan pilih waktu terbaik.
+4. **Pisahkan Rekening per Mata Uang**: Simpan dana di rekening mata uang masing-masing untuk meminimalkan biaya konversi ganda.
+5. **Evaluasi Posisi Valas Berkala**: Total saldo lintas rekening Anda saat ini setara **${financialContext?.totalBalance || 'Rp 0'}** — pantau apakah konsentrasi valas sesuai toleransi risiko Anda.`;
+      } 
+      // Intent 5: Budgeting 50/30/20
+      else if (lowerQuery.includes("50/30/20") || lowerQuery.includes("budget") || lowerQuery.includes("anggaran") || lowerQuery.includes("hemat") || lowerQuery.includes("strategi")) {
         fallbackReply = `### 💡 Panduan Budgeting 50/30/20 untuk Keuangan Anda
 
 Berdasarkan data keuangan Anda (${financialContext?.totalBalance ? `Total Saldo: ${financialContext.totalBalance}` : 'Bulan Ini'}):
@@ -677,14 +696,6 @@ Berikut adalah evaluasi ringkas catatan finansial Anda:
 1. Pertahankan rasio tabungan di atas 20% untuk memperkuat dana darurat.
 2. Segera follow up penagihan sisa piutang ${ls.remainingReceivables || 'Rp 0'} kepada peminjam agar arus kas masuk lebih cepat.
 3. Alokasikan surplus bulanan untuk mengangsur sisa hutang ${ls.remainingPayables || 'Rp 0'} sebelum jatuh tempo.`;
-      } 
-      // Intent 6: Valas & Kurs
-      else if (lowerQuery.includes("valas") || lowerQuery.includes("kurs") || lowerQuery.includes("mata uang") || lowerQuery.includes("nzd") || lowerQuery.includes("usd")) {
-        fallbackReply = `### 💱 Tips Manajemen Valuta Asing (Multi-Currency)
-
-1. **Pencatatan Berkelanjutan**: Selalu catat transaksi valas sesuai nominal aslinya (misal NZD, USD, SGD, HKD, TWD).
-2. **Live Conversion**: BukuKas Pro secara otomatis mengonversi seluruh transaksi ke mata uang utama (${financialContext?.currency || 'IDR'}) dengan kurs live real-time.
-3. **Lindungi Fluktuasi**: Saat bertransaksi antar-mata uang, periksa tab Kurs Valas di menu atas untuk melihat selisih nilai tukar harian.`;
       } 
       // Default Greeting / Menu
       else {

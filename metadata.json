@@ -1,0 +1,8 @@
+{
+  "name": "BukuKas Pro - Pembukuan & Keuangan Pribadi",
+  "description": "Aplikasi pembukuan pribadi komprehensif dengan tanggal dan waktu transaksi real-time, kurs valas live real-time, autentikasi akun Gmail, dasbor visual bulanan, pengingat tagihan, kategori kustom, brankas enkripsi E2E, 2FA, dan ekspor laporan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

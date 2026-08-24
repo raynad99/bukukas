@@ -806,8 +806,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const map = new Map<string, UserProfile>();
           prev.forEach(u => map.set(u.id, u));
           data.accounts.forEach((srv: any) => {
+            const s = srv as UserProfile;
+            const emailKey = String(s.email || '').toLowerCase();
+            // If a local AUTO-CREATED TRIAL shadows a server LIFETIME/PAID record
+            // (same email, different id), adopt the server identity so plan &
+            // referral userId match across devices.
+            const localDup = Array.from(map.values()).find(
+              u => u.email.toLowerCase() === emailKey && u.id !== s.id
+            );
+            if (
+              localDup &&
+              localDup.plan === 'trial' &&
+              (s.plan === 'lifetime' || s.plan === 'paid')
+            ) {
+              map.delete(localDup.id);
+              // If the shadowed local account is the currently logged-in user,
+              // promote the session to the server profile as well.
+              setCurrentUser(cur =>
+                cur && cur.email.toLowerCase() === emailKey && cur.plan === 'trial' ? s : cur
+              );
+            }
             // Local profile always wins on conflict (richer + has credentials)
-            if (!map.has(srv.id)) map.set(srv.id, srv as UserProfile);
+            if (!map.has(s.id)) map.set(s.id, s);
           });
           return Array.from(map.values());
         });
@@ -1004,7 +1024,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const existing = allRegisteredAccounts.find(u => u.email.toLowerCase() === email.toLowerCase());
+    let existing = allRegisteredAccounts.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+    // Cross-device login: if not in localStorage, look up the account on the server
+    // so lifetime/paid accounts created by Dev work on any device/domain.
+    if (!existing) {
+      try {
+        const res = await fetch('/api/accounts');
+        if (res.ok) {
+          const data = await res.json();
+          const srv = Array.isArray(data.accounts)
+            ? data.accounts.find((a: any) => String(a?.email || '').toLowerCase() === email.toLowerCase())
+            : null;
+          if (srv && (srv.plan === 'lifetime' || srv.plan === 'paid')) {
+            existing = srv as UserProfile;
+            setAllRegisteredAccounts(prev => [
+              existing as UserProfile,
+              ...prev.filter(u => u.email.toLowerCase() !== email.toLowerCase()),
+            ]);
+          }
+        }
+      } catch {
+        // Offline fallback — local behavior below
+      }
+    }
     
     // If account exists with password and user provided password, verify match
     if (existing && existing.password && _password && existing.password !== _password && !isDev) {

@@ -27,6 +27,7 @@ var server_exports = {};
 module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
+var import_fs = __toESM(require("fs"), 1);
 var import_vite = require("vite");
 var import_dotenv = __toESM(require("dotenv"), 1);
 import_dotenv.default.config();
@@ -95,8 +96,53 @@ async function generateWithOxAlpha(options) {
   }
   return null;
 }
+var DATA_DIR = import_path.default.join(process.cwd(), ".server-data");
+var ACCOUNTS_FILE = import_path.default.join(DATA_DIR, "accounts.json");
+var MESSAGES_FILE = import_path.default.join(DATA_DIR, "messages.json");
+function ensureDataDir() {
+  if (!import_fs.default.existsSync(DATA_DIR)) import_fs.default.mkdirSync(DATA_DIR, { recursive: true });
+}
+function loadJson(filePath, fallback) {
+  try {
+    ensureDataDir();
+    if (import_fs.default.existsSync(filePath)) {
+      const raw = import_fs.default.readFileSync(filePath, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.warn(`Failed to load ${filePath}:`, err);
+  }
+  return fallback;
+}
+function saveJson(filePath, data) {
+  try {
+    ensureDataDir();
+    import_fs.default.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.warn(`Failed to save ${filePath}:`, err);
+  }
+}
+var _accountsSaveTimer = null;
+var _messagesSaveTimer = null;
+function scheduleSaveAccounts() {
+  if (_accountsSaveTimer) clearTimeout(_accountsSaveTimer);
+  _accountsSaveTimer = setTimeout(() => {
+    saveJson(ACCOUNTS_FILE, Array.from(inMemoryServerAccounts.values()));
+  }, 1e3);
+}
+function scheduleSaveMessages() {
+  if (_messagesSaveTimer) clearTimeout(_messagesSaveTimer);
+  _messagesSaveTimer = setTimeout(() => {
+    saveJson(MESSAGES_FILE, inMemoryServerMessages);
+  }, 1e3);
+}
 var inMemoryServerAccounts = /* @__PURE__ */ new Map();
-var inMemoryServerMessages = [
+var _persistedAccounts = loadJson(ACCOUNTS_FILE, []);
+for (const acct of _persistedAccounts) {
+  if (acct?.id && acct?.email) inMemoryServerAccounts.set(acct.id, acct);
+}
+console.log(`[Storage] Loaded ${inMemoryServerAccounts.size} accounts from disk`);
+var inMemoryServerMessages = loadJson(MESSAGES_FILE, [
   {
     id: "msg-srv-welcome",
     senderName: "Sistem Pusat BukuKas",
@@ -120,7 +166,8 @@ var inMemoryServerMessages = [
     isRead: false,
     source: "gmail-web"
   }
-];
+]);
+console.log(`[Storage] Loaded ${inMemoryServerMessages.length} messages from disk`);
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
@@ -171,6 +218,7 @@ async function startServer() {
         });
         upserted += 1;
       }
+      scheduleSaveAccounts();
       return res.json({
         success: true,
         upserted,
@@ -240,6 +288,7 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
         source: source || "in-app"
       };
       inMemoryServerMessages.unshift(serverMsg);
+      scheduleSaveMessages();
       return res.json({
         success: true,
         message: "Pesan berhasil diterima di server email admin@bukukas.ai.studio",
@@ -275,6 +324,7 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
         source: "inbound-webhook"
       };
       inMemoryServerMessages.unshift(serverMsg);
+      scheduleSaveMessages();
       return res.json({
         success: true,
         status: "delivered",
@@ -297,6 +347,7 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
         msg.replyText = replyText;
         msg.repliedAt = (/* @__PURE__ */ new Date()).toISOString();
         msg.isRead = true;
+        scheduleSaveMessages();
       }
       return res.json({
         success: true,
@@ -312,6 +363,7 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
     const idx = inMemoryServerMessages.findIndex((m) => m.id === id);
     if (idx !== -1) {
       inMemoryServerMessages.splice(idx, 1);
+      scheduleSaveMessages();
     }
     return res.json({ success: true, message: "Pesan dihapus dari server." });
   });

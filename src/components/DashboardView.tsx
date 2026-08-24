@@ -234,7 +234,7 @@ export const DashboardView: React.FC = () => {
   }, [bills]);
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-24 md:pb-12">
+    <div className="space-y-3 sm:space-y-4 md:space-y-6 pb-24 md:pb-12">
       {/* Month Picker Header */}
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center">
         <div>
@@ -280,9 +280,9 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* Kurs Real-Time (Live) Full Multi-Currency Dashboard Panel */}
-      <div className="rounded-3xl border border-blue-200/80 bg-gradient-to-br from-blue-50/90 via-indigo-50/40 to-slate-50/80 p-4 shadow-xs dark:border-blue-900/40 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900">
+      <div className="rounded-2xl sm:rounded-3xl border border-blue-200/80 bg-gradient-to-br from-blue-50/90 via-indigo-50/40 to-slate-50/80 p-3 sm:p-4 shadow-xs dark:border-blue-900/40 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900">
         {/* Panel Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-blue-100 pb-3 dark:border-blue-950">
+        <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-blue-100 pb-2 sm:pb-3 dark:border-blue-950">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
               <Globe2 className="h-5 w-5" />
@@ -322,8 +322,8 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-        {/* Currency Rates Grid - Visible in full across all screens */}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7">
+        {/* Currency Rates Grid - scrollable on very small screens */}
+        <div className="mt-3 grid grid-cols-3 gap-1.5 sm:grid-cols-4 sm:gap-2 md:grid-cols-6 lg:grid-cols-7">
           {([
             'IDR',
             'NZD',
@@ -348,7 +348,7 @@ export const DashboardView: React.FC = () => {
                 key={currCode}
                 onClick={() => setCurrency(currCode)}
                 title={`Klik untuk mengatur ${currCode} sebagai mata uang aktif aplikasi`}
-                className={`group flex flex-col justify-between rounded-2xl border p-2.5 text-left transition-all hover:scale-[1.02] ${
+                className={`group flex flex-col justify-between rounded-xl sm:rounded-2xl border p-2 sm:p-2.5 text-left transition-all hover:scale-[1.02] ${
                   isCurrentActive
                     ? 'border-blue-500 bg-blue-600 text-white shadow-md'
                     : 'border-slate-200/80 bg-white/90 text-slate-800 hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-blue-800'
@@ -372,11 +372,11 @@ export const DashboardView: React.FC = () => {
                   )}
                 </div>
 
-                <div className="mt-2">
-                  <span className={`block text-[10px] ${isCurrentActive ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                <div className="mt-1.5 sm:mt-2">
+                  <span className={`block text-[9px] sm:text-[10px] ${isCurrentActive ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
                     1 {currCode} =
                   </span>
-                  <span className={`block text-xs font-bold truncate ${isCurrentActive ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                  <span className={`block text-[10px] sm:text-xs font-bold truncate ${isCurrentActive ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
                     Rp {Math.round(rateInIdr).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')}
                   </span>
                 </div>
@@ -387,9 +387,9 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 md:gap-4 lg:grid-cols-4">
         {/* Card 1: Total Saldo */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-4 md:p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('total_balance')}</span>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
@@ -411,7 +411,7 @@ export const DashboardView: React.FC = () => {
         </div>
 
         {/* Card 2: Pemasukan Bulan Ini */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-4 md:p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('monthly_income')}</span>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-950/60 dark:text-teal-400">
@@ -432,7 +432,7 @@ export const DashboardView: React.FC = () => {
         </div>
 
         {/* Card 3: Pengeluaran Bulan Ini */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-4 md:p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('monthly_expense')}</span>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400">
@@ -453,7 +453,7 @@ export const DashboardView: React.FC = () => {
         </div>
 
         {/* Card 4: Net Savings & Health Score */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-4 md:p-4.5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('net_savings')}</span>
             <div className="flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">

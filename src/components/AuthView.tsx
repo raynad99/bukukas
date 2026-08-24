@@ -369,104 +369,108 @@ export const AuthView: React.FC = () => {
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-12">
       {/* Header Banner */}
-      <div className="rounded-3xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-6 text-white shadow-xl sm:p-8 dark:border-slate-800">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-4 sm:p-6 md:p-8 text-white shadow-xl dark:border-slate-800">
+        <div className="flex flex-col gap-4 sm:gap-6">
           <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                <span>Autentikasi & Akun Aman</span>
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-emerald-300 backdrop-blur-md">
+                <ShieldCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <span>Akun Aman</span>
               </span>
               {currentUser && (
-                <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${trialInfo.badgeClass}`}>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] sm:text-xs font-bold ${trialInfo.badgeClass}`}>
                   {trialInfo.badgeLabel}
                 </span>
               )}
             </div>
-            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
-              {currentUser ? 'Pusat Akun & Profil' : 'Masuk ke Pembukuan Keuangan BukuKas'}
+            <h1 className="text-lg sm:text-2xl md:text-3xl font-black tracking-tight leading-tight">
+              {currentUser ? 'Pusat Akun & Profil' : 'Masuk ke Pembukuan BukuKas'}
             </h1>
-            <p className="text-sm text-slate-300 max-w-xl">
+            <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
               {currentUser
-                ? `Anda terhubung sebagai ${currentUser.email}. Semua data transaksi dan cadangan awan tersimpan aman di akun Anda.`
-                : 'Silakan masuk dengan akun Anda atau daftar mandiri untuk mendapatkan Masa Percobaan (Trial) 7 Hari gratis.'}
+                ? `Anda terhubung sebagai ${currentUser.email}. Semua data transaksi tersimpan aman.`
+                : 'Masuk atau daftar untuk mendapatkan Trial 7 Hari gratis.'}
             </p>
           </div>
 
           {currentUser ? (
-            <div className="flex shrink-0 items-center gap-3 rounded-2xl bg-white/10 p-3.5 backdrop-blur-md border border-white/10">
+            <div className="flex items-center gap-3 rounded-xl sm:rounded-2xl bg-white/10 p-3 sm:p-3.5 backdrop-blur-md border border-white/10">
               <img
                 src={currentUser.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=10b981&color=fff`}
                 alt={currentUser.name}
                 referrerPolicy="no-referrer"
-                className="h-12 w-12 rounded-full border-2 border-emerald-400 object-cover shadow-sm"
+                className="h-10 w-10 sm:h-12 sm:w-12 rounded-full border-2 border-emerald-400 object-cover shadow-sm"
               />
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-1.5 font-bold text-sm text-white">
-                  <span>{currentUser.name}</span>
+                  <span className="truncate">{currentUser.name}</span>
                   {currentUser.isVerified && (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
                   )}
                 </div>
-                <div className="text-xs text-slate-300 flex items-center gap-1">
-                  <Mail className="h-3 w-3 text-slate-400" />
-                  <span>{currentUser.email}</span>
+                <div className="text-[11px] sm:text-xs text-slate-300 flex items-center gap-1">
+                  <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                  <span className="truncate">{currentUser.email}</span>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="flex shrink-0 flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsCryptoPaymentModalOpen(true)}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 transition active:scale-95"
-              >
-                <Wallet className="h-4 w-4 text-amber-300" />
-                <span>Bayar Pro Onchain Base</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsCryptoPaymentModalOpen(true)}
+              className="flex items-center justify-center gap-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 transition active:scale-95"
+            >
+              <Wallet className="h-4 w-4 text-amber-300" />
+              <span>Bayar Pro Onchain Base</span>
+            </button>
           )}
         </div>
       </div>
 
       {/* Crypto Payment Highlight Banner */}
-      <div className="rounded-3xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/90 via-blue-50/50 to-indigo-100/60 p-5 dark:border-indigo-900/60 dark:bg-slate-900/80 dark:from-indigo-950/40 dark:to-slate-900">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-600/20">
-              <Crown className="h-6 w-6 text-amber-300" />
+      <div className="rounded-2xl sm:rounded-3xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50/90 via-blue-50/50 to-indigo-100/60 p-4 sm:p-5 dark:border-indigo-900/60 dark:bg-slate-900/80 dark:from-indigo-950/40 dark:to-slate-900">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-600/20">
+              <Crown className="h-5 w-5 sm:h-6 sm:w-6 text-amber-300" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                  Langganan Akun Pro 1 Tahun ($10 USDT/USDC ETH Base)
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white leading-tight">
+                  Langganan Pro 1 Tahun
                 </h3>
-                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] sm:text-[10px] font-black text-blue-800 dark:bg-blue-950 dark:text-blue-300">
                   Base L2
                 </span>
               </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-xl">
-                Alamat Wallet: <strong className="font-mono text-indigo-700 dark:text-indigo-300">{OFFICIAL_CRYPTO_WALLET}</strong> ($10 / 1 Tahun). Kirim TX HASH bukti transfer dan konfirmasi via WhatsApp untuk aktivasi instan.
+              <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 mt-1">
+                Bayar <strong>$10 USDT/USDC</strong> ke wallet:
               </p>
+              <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-indigo-100/60 dark:bg-indigo-950/50 px-2.5 py-1.5 border border-indigo-200/60 dark:border-indigo-800/40">
+                <span className="font-mono text-[10px] sm:text-[11px] font-bold text-indigo-700 dark:text-indigo-300 truncate" title={OFFICIAL_CRYPTO_WALLET}>
+                  {OFFICIAL_CRYPTO_WALLET.slice(0, 6)}...{OFFICIAL_CRYPTO_WALLET.slice(-4)}
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">($10 / 1 Tahun)</span>
+              </div>
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <button
               type="button"
               onClick={handleCopyWallet}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             >
               {copiedWallet ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-              <span>{copiedWallet ? 'Tersalin' : 'Salin Wallet'}</span>
+              <span>{copiedWallet ? 'Tersalin!' : 'Salin Alamat Wallet'}</span>
             </button>
             <button
               type="button"
               onClick={() => setIsCryptoPaymentModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-indigo-500 transition active:scale-95"
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-500 transition active:scale-95"
             >
               <Sparkles className="h-4 w-4 text-amber-300" />
-              <span>Input TX HASH & Konfirmasi</span>
+              <span>Input TX HASH</span>
             </button>
           </div>
         </div>

@@ -50,12 +50,12 @@ const AppContent: React.FC = () => {
         {!isGuest && <Sidebar />}
 
         {/* Right Main Content Area */}
-        <div className="flex flex-1 flex-col overflow-x-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden">
           {/* Top Bar Header (disembunyikan di halaman login) */}
           {!isGuest && <Header />}
 
           {/* View Container */}
-          <main className="flex-1 px-3 py-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto pb-24 md:pb-12">
+          <main className="flex-1 px-2.5 py-3 sm:px-4 md:px-6 lg:px-8 max-w-7xl w-full mx-auto pb-24 md:pb-12 overflow-y-auto">
             {/* Banner status lisensi / peringatan trial habis (user login) */}
             {!isGuest && activeView !== 'auth' && <TrialBanner />}
 

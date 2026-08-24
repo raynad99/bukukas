@@ -89,7 +89,16 @@ export async function createTablesIfNotExist(): Promise<void> {
       )
     `;
 
-    console.log('[DB] Tables created/verified: server_accounts, server_messages, verification_tokens');
+    // Financial data sync table — stores per-user financial data (transactions, categories, etc.)
+    await sql`
+      CREATE TABLE IF NOT EXISTS user_financial_data (
+        user_id TEXT PRIMARY KEY,
+        financial_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+        synced_at TEXT NOT NULL DEFAULT NOW()::TEXT
+      )
+    `;
+
+    console.log('[DB] Tables created/verified: server_accounts, server_messages, verification_tokens, user_financial_data');
   } catch (err) {
     console.warn('[DB] Table creation error:', err);
   }

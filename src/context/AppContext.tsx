@@ -985,6 +985,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [allRegisteredAccounts]);
 
+  // --- Financial Data Sync (per-user, across domains/devices) ---
+  const pushFinancialDataToServer = async () => {
+    if (!currentUser?.id) return;
+    try {
+      await fetch(`/api/user-data/${currentUser.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactions,
+          categories,
+          accounts,
+          bills,
+          loans,
+          cloudSync,
+        }),
+      });
+    } catch {
+      // Offline fallback — data stays in localStorage
+    }
+  };
+
+  const pullFinancialDataFromServer = async () => {
+    if (!currentUser?.id) return;
+    try {
+      const res = await fetch(`/api/user-data/${currentUser.id}`);
+      if (!res.ok) return;
+      const result = await res.json();
+      if (result.success && result.data) {
+        const d = result.data;
+        // Only update if server data is newer than local
+        if (Array.isArray(d.transactions) && d.transactions.length > 0 && d.transactions.length > transactions.length) {
+          setTransactions(d.transactions);
+        }
+        if (Array.isArray(d.categories) && d.categories.length > 0 && d.categories.length > categories.length) {
+          setCategories(d.categories);
+        }
+        if (Array.isArray(d.accounts) && d.accounts.length > 0 && d.accounts.length > accounts.length) {
+          setAccounts(d.accounts);
+        }
+        if (Array.isArray(d.bills) && d.bills.length > 0 && d.bills.length > bills.length) {
+          setBills(d.bills);
+        }
+        if (Array.isArray(d.loans) && d.loans.length > 0 && d.loans.length > loans.length) {
+          setLoans(d.loans);
+        }
+      }
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  // Pull financial data on mount and periodically
+  useEffect(() => {
+    if (currentUser?.id) {
+      pullFinancialDataFromServer();
+      const intervalId = setInterval(pullFinancialDataFromServer, 30000);
+      return () => clearInterval(intervalId);
+    }
+  }, [currentUser?.id]);
+
+  // Push financial data when it changes (debounced)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const timeoutId = setTimeout(() => {
+      pushFinancialDataToServer();
+    }, 2000);
+    return () => clearTimeout(timeoutId);
+  }, [transactions, categories, accounts, bills, loans, currentUser?.id]);
+
   // Auth Operations
   const loginWithGoogle = async (
     presetEmail?: string,

@@ -428,6 +428,70 @@ async function startServer() {
     }
   });
 
+  // ==================== Financial Data Sync (per-user) ====================
+  // Sync financial data (transactions, categories, accounts, bills, loans) per user across devices/domains
+  // Uses Neon DB when available, falls back to in-memory
+  const inMemoryFinancialData = new Map<string, any>();
+
+  app.get("/api/user-data/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const rows = await sql`SELECT financial_data, synced_at FROM user_financial_data WHERE user_id = ${userId}`;
+        if (rows.length > 0) {
+          return res.json({ success: true, data: rows[0].financial_data, syncedAt: rows[0].synced_at });
+        }
+        return res.json({ success: true, data: null });
+      }
+
+      const data = inMemoryFinancialData.get(userId);
+      return res.json({ success: true, data: data || null });
+    } catch (err: any) {
+      console.error('[UserData] GET error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/user-data/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+
+      const data = req.body;
+      if (!data || typeof data !== 'object') {
+        return res.status(400).json({ error: 'Invalid data' });
+      }
+
+      const now = new Date().toISOString();
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        // Upsert: insert or update
+        await sql`
+          INSERT INTO user_financial_data (user_id, financial_data, synced_at)
+          VALUES (${userId}, ${JSON.stringify(data)}::jsonb, ${now})
+          ON CONFLICT (user_id) DO UPDATE SET financial_data = ${JSON.stringify(data)}::jsonb, synced_at = ${now}
+        `;
+        console.log(`[UserData] Synced financial data for user ${userId} (Neon DB)`);
+        return res.json({ success: true, syncedAt: now });
+      }
+
+      // In-memory fallback
+      const existing = inMemoryFinancialData.get(userId) || {};
+      const merged = { ...existing, ...data, syncedAt: now };
+      inMemoryFinancialData.set(userId, merged);
+
+      console.log(`[UserData] Synced financial data for user ${userId} (in-memory fallback)`);
+      return res.json({ success: true, syncedAt: now });
+    } catch (err: any) {
+      console.error('[UserData] POST error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({
@@ -498,6 +562,38 @@ async function startServer() {
       res.json({ success: true, deleted, message: `${deleted} akun sampah dihapus.` });
     } catch (err: any) {
       console.error('[DB] Cleanup error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Cleanup junk emails/messages (keep only seed + legitimate messages)
+  app.delete('/api/business-email/cleanup', async (req, res) => {
+    try {
+      if (isDbAvailable()) {
+        const sql = getSql();
+        // Delete test/backtest messages (from bot@backtest.dev, webhook@eksternal.id, etc.)
+        const countResult = await sql`SELECT COUNT(*)::int as cnt FROM server_messages WHERE sender_email LIKE '%@backtest.dev' OR sender_email LIKE '%@eksternal.id' OR sender_email LIKE '%@test%'`;
+        const count = countResult[0]?.cnt ?? 0;
+        if (count > 0) {
+          await sql`DELETE FROM server_messages WHERE sender_email LIKE '%@backtest.dev' OR sender_email LIKE '%@eksternal.id' OR sender_email LIKE '%@test%'`;
+        }
+        // Count remaining
+        const remaining = await sql`SELECT COUNT(*)::int as cnt FROM server_messages`;
+        console.log(`[DB] Email cleanup: deleted ${count} junk messages, ${remaining[0]?.cnt ?? 0} remaining`);
+        return res.json({ success: true, deleted: count, remaining: remaining[0]?.cnt ?? 0 });
+      }
+      // In-memory fallback
+      let deleted = 0;
+      for (let i = inMemoryServerMessages.length - 1; i >= 0; i--) {
+        const email = inMemoryServerMessages[i].senderEmail;
+        if (email.includes('@backtest.dev') || email.includes('@eksternal.id') || email.includes('@test')) {
+          inMemoryServerMessages.splice(i, 1);
+          deleted++;
+        }
+      }
+      res.json({ success: true, deleted, remaining: inMemoryServerMessages.length });
+    } catch (err: any) {
+      console.error('[DB] Email cleanup error:', err);
       res.status(500).json({ success: false, error: err.message });
     }
   });

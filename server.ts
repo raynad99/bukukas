@@ -409,6 +409,10 @@ KONTEKS FINANSIAL REAL-TIME PENGGUNA BUKUKAS PRO:
 - Pengeluaran Bulan Ini: ${financialContext.monthlyExpense || '0'}
 - Tabungan Bersih: ${financialContext.netSavings || '0'} (${financialContext.savingsRate || 0}% rasio tabungan)
 - Tagihan Rutin Belum Lunas: ${financialContext.unpaidBillsCount || 0} tagihan
+${Array.isArray(financialContext.unpaidBillsList) && financialContext.unpaidBillsList.length > 0 ? `- Daftar Tagihan Belum Lunas (urut jatuh tempo):
+${financialContext.unpaidBillsList.map((b: any) => `   * ${b.title}: ${b.amount} | Jatuh tempo ${b.dueDate}${b.isOverdue ? ' (TERLAMBAT)' : ''}`).join('\n')}` : '- Semua tagihan sudah lunas'}
+${Array.isArray(financialContext.topExpenseCategories) && financialContext.topExpenseCategories.length > 0 ? `- Breakdown Pengeluaran per Kategori (bulan ini):
+${financialContext.topExpenseCategories.map((c: any) => `   * ${c.name}: ${c.amount} (${c.percent}%)`).join('\n')}` : ''}
 
 RINGKASAN MODUL HUTANG & PIUTANG (LIABILITIES & ASSETS):
 1. PIUTANG (RECEIVABLES / UANG PENGGUNA YANG DIPINJAM ORANG LAIN / HAK TAGIH):
@@ -487,15 +491,79 @@ ${contextDescription}`;
       const lowerQuery = message.toLowerCase();
       let fallbackReply = "";
 
-      // Intent 1: Pertanyaan seputar PIUTANG (Receivables)
+      // Intent 0a: Sapaan / basa-basi
       if (
+        /^(halo|hai|hi|hei|hey|assalam|pagi|siang|sore|malam)[\s!,.?]*$/.test(lowerQuery) ||
+        lowerQuery.includes("apa kabar") ||
+        lowerQuery.includes("terima kasih") ||
+        lowerQuery.includes("makasih") ||
+        lowerQuery === "thanks"
+      ) {
+        fallbackReply = `Halo ${financialContext?.userName || 'Kak'}! 👋 Saya **Asisten Keuangan BukuKas** dan siap membantu Anda kapan saja.\n\nBeberapa hal yang bisa langsung Anda tanyakan:\n- 🧾 _"Tagihan apa saja yang belum dibayar?"_\n- 💰 _"Total piutang saya?"_\n- 💳 _"Status hutang & cicilan?"_\n- ⬇️ _"Berapa pengeluaran bulan ini?"_ | ⬆️ _"Pemasukan bulan ini?"_\n- 📊 _"Analisis keuangan saya"_ | 💡 _"Strategi budgeting"_ | 💱 _"Tips valas"_`;
+      }
+      // Intent 0b: TAGIHAN (bills) — HARUS sebelum piutang agar kata
+      // "tagihan" tidak salah match ke "tagih"
+      else if (
+        lowerQuery.includes("tagihan") ||
+        (lowerQuery.includes("bill") && !lowerQuery.includes("hutang")) ||
+        lowerQuery.includes("listrik") ||
+        lowerQuery.includes("internet") ||
+        lowerQuery.includes("langganan") ||
+        lowerQuery.includes("iuran")
+      ) {
+        const unpaidBills = Array.isArray(financialContext?.unpaidBillsList) ? financialContext.unpaidBillsList : [];
+        const billsMd = unpaidBills.length > 0
+          ? unpaidBills.map((b: any, i: number) =>
+              `${i + 1}. **${b.title}** — **${b.amount}** | Jatuh tempo: **${b.dueDate}**${b.isOverdue ? ' ⚠️ *TERLAMBAT*' : ''} (${b.recurrence})`
+            ).join('\n')
+          : "_Semua tagihan sudah lunas! 🎉 Tidak ada yang perlu dibayar._";
+        const hasOverdue = unpaidBills.some((b: any) => b.isOverdue);
+        fallbackReply = `### 🧾 Tagihan Belum Lunas (${unpaidBills.length})\n\n${billsMd}\n\n💡 ${hasOverdue ? '**Ada tagihan terlambat** — segera bayar untuk menghindari denda!' : 'Semua masih dalam batas waktu. Aktifkan auto-debit di menu Tagihan agar tidak terlewat.'}`;
+      }
+      // Intent 0c: PENGELUARAN bulan ini (+ breakdown kategori)
+      else if (
+        lowerQuery.includes("pengeluaran") ||
+        lowerQuery.includes("pengeluar") ||
+        lowerQuery.includes("belanja") ||
+        lowerQuery.includes("expense") ||
+        (lowerQuery.includes("laporan") && !lowerQuery.includes("pemasukan"))
+      ) {
+        const cats = Array.isArray(financialContext?.topExpenseCategories) ? financialContext.topExpenseCategories : [];
+        const catMd = cats.length > 0
+          ? cats.map((c: any) => `- **${c.name}**: ${c.amount} (${c.percent}% dari total)`).join('\n')
+          : "_Belum ada pengeluaran tercatat bulan ini._";
+        fallbackReply = `### ⬇️ Pengeluaran Bulan Ini\n\n- **Total**: **${financialContext?.monthlyExpense || 'Rp 0'}**\n- Dibanding pemasukan: ${financialContext?.monthlyIncome || 'Rp 0'} → arus kas bersih **${financialContext?.netSavings || 'Rp 0'}** (rasio tabungan ${financialContext?.savingsRate || 0}%)\n\n#### 📂 Breakdown Kategori Terbesar:\n${catMd}\n\n💡 ${cats.length > 0 ? `Kategori terbesar adalah **${cats[0].name}** (${cats[0].percent}%). Jika ingin hemat, mulai review dari sini.` : 'Mulai catat transaksi Anda agar analisis makin akurat.'}`;
+      }
+      // Intent 0d: PEMASUKAN
+      else if (
+        lowerQuery.includes("pemasukan") ||
+        lowerQuery.includes("pendapatan") ||
+        lowerQuery.includes("income") ||
+        lowerQuery.includes("gaji") ||
+        lowerQuery.includes("uang masuk")
+      ) {
+        fallbackReply = `### ⬆️ Pemasukan Bulan Ini\n\n- **Total**: **${financialContext?.monthlyIncome || 'Rp 0'}**\n- Pengeluaran: ${financialContext?.monthlyExpense || 'Rp 0'} → surplus/defisit **${financialContext?.netSavings || 'Rp 0'}**\n- Rasio tabungan: **${financialContext?.savingsRate || 0}%** ${(financialContext?.savingsRate || 0) >= 20 ? '🟢 (sudah sehat)' : (financialContext?.savingsRate || 0) >= 5 ? '🟡 (cukup)' : '🔴 (perlu ditingkatkan)'}\n\n💡 Idealnya sisihkan minimal 20% pemasukan untuk tabungan/dana darurat.`;
+      }
+      // Intent 0e: SALDO spesifik
+      else if (
+        lowerQuery.includes("saldo") ||
+        lowerQuery.includes("balance") ||
+        lowerQuery.includes("kekayaan") ||
+        lowerQuery.includes("total uang") ||
+        lowerQuery.includes("uang saya")
+      ) {
+        fallbackReply = `### 💼 Saldo & Kekayaan Anda\n\n- **Total Saldo Seluruh Rekening**: **${financialContext?.totalBalance || 'Rp 0'}**\n- ⬆️ Masuk bulan ini: ${financialContext?.monthlyIncome || 'Rp 0'} | ⬇️ Keluar: ${financialContext?.monthlyExpense || 'Rp 0'}\n- ⚖️ Ditambah sisa piutang ${ls.remainingReceivables || 'Rp 0'}, dikurangi sisa hutang ${ls.remainingPayables || 'Rp 0'}\n\n💡 Pastikan ada dana darurat minimal 3–6× pengeluaran bulanan (${financialContext?.monthlyExpense || 'Rp 0'}).`;
+      }
+      // Intent 1: Pertanyaan seputar PIUTANG (Receivables)
+      else if (
         lowerQuery.includes("piutang") ||
         lowerQuery.includes("receivable") ||
         lowerQuery.includes("siapa yang pinjam") ||
         lowerQuery.includes("siapa yang ngutang") ||
         lowerQuery.includes("orang pinjam") ||
+        lowerQuery.includes("dipinjam") ||
         lowerQuery.includes("hak tagih") ||
-        lowerQuery.includes("tagih")
+        lowerQuery.includes("uang di luar")
       ) {
         const activeReceivables = Array.isArray(ls.activeReceivablesList) ? ls.activeReceivablesList : [];
         let listMarkdown = "";

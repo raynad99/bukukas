@@ -252,6 +252,28 @@ describe('Fitur Backend API (server.ts)', () => {
     expect(j.reply.length).toBeGreaterThan(20);
   });
 
+  test('REGRESI INTENT CHAT: "tagihan" tidak salah dijawab sebagai piutang', async () => {
+    const r = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'tagihan saya apa saja yang belum dibayar',
+        financialContext: {
+          unpaidBillsList: [
+            { title: 'Listrik PLN', amount: 'Rp 450.000', dueDate: '2026-08-20', isOverdue: true, recurrence: 'monthly' },
+          ],
+          loansSummary: { remainingReceivables: 'Rp 2.000.000' },
+        },
+      }),
+    });
+    const j: any = await r.json();
+    expect(r.status).toBe(200);
+    expect(j.reply).toContain('Tagihan Belum Lunas');
+    expect(j.reply).toContain('Listrik PLN');
+    // Tidak boleh ter-redirect ke jawaban piutang
+    expect(j.reply).not.toContain('Ringkasan & Total Piutang');
+  });
+
   test('GET /api/exchange-rates → kurs live IDR tersedia', async () => {
     const j: any = await (await fetch(`${BASE}/api/exchange-rates?base=IDR`)).json();
     expect(j.result).toBe('success');

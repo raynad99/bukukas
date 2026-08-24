@@ -77,6 +77,8 @@ function buildLocalAiReply(
     netSavings: string;
     savingsRate: number;
     unpaidBillsCount: number;
+    unpaidBillsList?: { title: string; amount: string; dueDate: string; isOverdue: boolean; recurrence: string }[];
+    topExpenseCategories?: { name: string; amount: string; percent: number }[];
     loansSummary: {
       remainingReceivables: string;
       activeReceivablesCount: number;
@@ -91,6 +93,77 @@ function buildLocalAiReply(
 ): string {
   const q = message.toLowerCase();
   const ls = ctx.loansSummary;
+
+  // Intent 0a: Sapaan / basa-basi
+  if (
+    /^(halo|hai|hi|hei|hey|assalam|pagi|siang|sore|malam)[\s!,.?]*$/.test(q) ||
+    q.includes('apa kabar') ||
+    q.includes('terima kasih') ||
+    q.includes('makasih') ||
+    q === 'thanks'
+  ) {
+    return `Halo ${ctx.userName}! 👋 Saya **Asisten Keuangan BukuKas** dan siap membantu Anda kapan saja.\n\nBeberapa hal yang bisa langsung Anda tanyakan:\n- 🧾 _"Tagihan apa saja yang belum dibayar?"_\n- 💰 _"Total piutang saya?"_\n- 💳 _"Status hutang & cicilan?"_\n- 📊 _"Analisis keuangan saya"_ atau _"laporan pengeluaran per kategori"_\n- 💡 _"Strategi budgeting"_ | 💱 _"Tips valas"_`;
+  }
+
+  // Intent 0b: TAGIHAN (bills) — HARUS sebelum piutang agar "tagihan" tidak
+  // salah match dengan kata "tagi(h)"
+  if (
+    q.includes('tagihan') ||
+    q.includes('tagihan rutin') ||
+    q.includes('bill') && !q.includes('hutang') ||
+    q.includes('listrik') ||
+    q.includes('internet') ||
+    q.includes('langganan') ||
+    q.includes('iuran')
+  ) {
+    const list = ctx.unpaidBillsList ?? [];
+    const billsMd = list.length
+      ? list
+          .map(
+            (b: any, i: number) =>
+              `${i + 1}. **${b.title}** — **${b.amount}** | Jatuh tempo: **${b.dueDate}**${b.isOverdue ? ' ⚠️ *TERLAMBAT*' : ''} (${b.recurrence})`
+          )
+          .join('\n')
+      : '_Semua tagihan sudah lunas! 🎉 Tidak ada yang perlu dibayar._';
+    return `### 🧾 Tagihan Belum Lunas (${list.length})\n\n${billsMd}\n\n💡 ${list.some((b: any) => b.isOverdue) ? '**Ada tagihan terlambat** — segera bayar untuk menghindari denda!' : 'Semua masih dalam batas waktu. Aktifkan auto-debit di menu Tagihan agar tidak terlewat.'}`;
+  }
+
+  // Intent 0c: PENGELUARAN bulan ini (+ breakdown kategori)
+  if (
+    q.includes('pengeluaran') ||
+    q.includes('pengeluar') ||
+    q.includes('belanja') ||
+    q.includes('expense') ||
+    (q.includes('laporan') && !q.includes('pemasukan'))
+  ) {
+    const cats = ctx.topExpenseCategories ?? [];
+    const catMd = cats.length
+      ? cats.map((c: any) => `- **${c.name}**: ${c.amount} (${c.percent}% dari total)`).join('\n')
+      : '_Belum ada pengeluaran tercatat bulan ini._';
+    return `### ⬇️ Pengeluaran Bulan Ini\n\n- **Total**: **${ctx.monthlyExpense}**\n- Dibanding pemasukan: ${ctx.monthlyIncome} → arus kas bersih **${ctx.netSavings}** (rasio tabungan ${ctx.savingsRate}%)\n\n#### 📂 Breakdown Kategori Terbesar:\n${catMd}\n\n💡 ${cats.length ? `Kategori terbesar adalah **${cats[0].name}** (${cats[0].percent}%). Jika ingin hemat, mulai review dari sini.` : 'Mulai catat transaksi Anda agar analisis makin akurat.'}`;
+  }
+
+  // Intent 0d: PEMASUKAN
+  if (
+    q.includes('pemasukan') ||
+    q.includes('pendapatan') ||
+    q.includes('income') ||
+    q.includes('gaji') ||
+    q.includes('uang masuk')
+  ) {
+    return `### ⬆️ Pemasukan Bulan Ini\n\n- **Total**: **${ctx.monthlyIncome}**\n- Pengeluaran: ${ctx.monthlyExpense} → surplus/defisit **${ctx.netSavings}**\n- Rasio tabungan: **${ctx.savingsRate}%** ${ctx.savingsRate >= 20 ? '🟢 (sudah sehat)' : ctx.savingsRate >= 5 ? '🟡 (cukup)' : '🔴 (perlu ditingkatkan)'}\n\n💡 Idealnya sisihkan minimal 20% pemasukan untuk tabungan/dana darurat.`;
+  }
+
+  // Intent 0e: SALDO spesifik
+  if (
+    q.includes('saldo') ||
+    q.includes('balance') ||
+    q.includes('kekayaan') ||
+    q.includes('total uang') ||
+    q.includes('uang saya')
+  ) {
+    return `### 💼 Saldo & Kekayaan Anda\n\n- **Total Saldo Seluruh Rekening**: **${ctx.totalBalance}**\n- ⬆️ Masuk bulan ini: ${ctx.monthlyIncome} | ⬇️ Keluar: ${ctx.monthlyExpense}\n- ⚖️ Ditambah sisa piutang ${ls.remainingReceivables}, dikurangi sisa hutang ${ls.remainingPayables}\n\n💡 Pastikan ada dana darurat minimal 3–6× pengeluaran bulanan (${ctx.monthlyExpense}).`;
+  }
 
   const receivablesMd = ls.activeReceivablesList.length
     ? ls.activeReceivablesList
@@ -113,8 +186,10 @@ function buildLocalAiReply(
   if (
     q.includes('piutang') ||
     q.includes('receivable') ||
-    q.includes('tagih') ||
-    q.includes('pinjam')
+    q.includes('dipinjam') ||
+    q.includes('meminjamkan') ||
+    q.includes('hak tagih') ||
+    q.includes('uang di luar')
   ) {
     return `### 💰 Ringkasan Piutang Anda (Hak Tagih)\n\n- **Total sisa piutang belum diterima**: **${ls.remainingReceivables}**\n- **Jumlah debitur aktif**: ${ls.activeReceivablesCount}\n\n---\n\n#### 📋 Rincian Peminjam:\n${receivablesMd}\n\n💡 **Tips**: Gunakan fitur pengingat WhatsApp di menu Hutang & Piutang sebelum jatuh tempo tiba.`;
   }
@@ -297,6 +372,39 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
           status: 'Lunas 100%',
         }));
 
+      // Tagihan belum lunas, urut jatuh tempo terdekat (untuk intent "tagihan")
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const unpaidBillsList = bills
+        .filter(b => !b.isPaid)
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+        .map(b => ({
+          title: b.title,
+          amount: formatCurrency(b.amount, b.currency || 'IDR', language),
+          dueDate: b.dueDate,
+          isOverdue: b.dueDate < todayStr,
+          recurrence: b.recurrence,
+        }));
+
+      // Top 5 kategori pengeluaran bulan ini (untuk intent "laporan/pengeluaran")
+      const expenseByCategory = new Map<string, number>();
+      monthlyTxs
+        .filter(t => t.type === 'expense')
+        .forEach(t => {
+          const idr = convertCurrency(t.amount, t.currency || 'IDR', currency, exchangeRates.rates);
+          expenseByCategory.set(t.categoryId, (expenseByCategory.get(t.categoryId) || 0) + idr);
+        });
+      const topExpenseCategories = [...expenseByCategory.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([catId, total]) => {
+          const cat = categories.find(c => c.id === catId);
+          return {
+            name: cat?.name || 'Lainnya',
+            amount: formatCurrency(total, currency, language),
+            percent: monthlyExpense > 0 ? Math.round((total / monthlyExpense) * 100) : 0,
+          };
+        });
+
       const financialContext = {
         userName: currentUser?.name || 'Pengguna',
         currency,
@@ -306,6 +414,8 @@ export const AiChatBot: React.FC<{ isEmbedded?: boolean; onClose?: () => void }>
         netSavings: formatCurrency(netSavings, currency, language),
         savingsRate,
         unpaidBillsCount,
+        unpaidBillsList,
+        topExpenseCategories,
         // Loans & Debts Context
         loansSummary: {
           totalPayables: formatCurrency(totalPayableAmount, currency, language),

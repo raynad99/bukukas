@@ -1096,7 +1096,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // If account exists with password and user provided password, verify match
     if (existing && existing.password && _password && existing.password !== _password && !isDev) {
       addNotification('error', 'Kata Sandi Salah', 'Kata sandi tidak sesuai. Silakan coba lagi atau gunakan Lupa Kata Sandi.');
-      throw new Error('Kata sandi tidak sesuai dengan akun terdaftar.');
+      throw new Error('Kata sandi tidak sesuai dengan akun terdaftar. Silakan periksa kembali kata sandi Anda.');
+    }
+
+    // If account doesn't exist, auto-create trial (transparent message)
+    if (!existing && !isDev) {
+      addNotification('info', 'Akun Baru Dibuat', `Email ${email} belum terdaftar. Akun Trial 7 hari otomatis dibuat.`);
     }
 
     const user: UserProfile = existing || {

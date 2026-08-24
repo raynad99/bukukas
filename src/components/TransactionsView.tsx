@@ -246,7 +246,6 @@ export const TransactionsView: React.FC = () => {
               <option value="all">Semua Tipe</option>
               <option value="income">Pemasukan (+)</option>
               <option value="expense">Pengeluaran (-)</option>
-              <option value="transfer">Transfer (↔)</option>
             </select>
           </div>
 

@@ -30,8 +30,82 @@ var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
 var import_vite = require("vite");
 var import_dotenv = __toESM(require("dotenv"), 1);
+
+// src/lib/db.ts
+var import_serverless = require("@neondatabase/serverless");
+var sql = null;
+var dbAvailable = false;
+function initDatabase() {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    console.warn("[DB] DATABASE_URL not configured \u2014 using JSON file fallback");
+    return false;
+  }
+  try {
+    sql = (0, import_serverless.neon)(dbUrl);
+    dbAvailable = true;
+    console.log("[DB] Neon serverless Postgres connected");
+    return true;
+  } catch (err) {
+    console.warn("[DB] Failed to connect to Neon:", err);
+    return false;
+  }
+}
+function isDbAvailable() {
+  return dbAvailable && sql !== null;
+}
+function getSql() {
+  return sql;
+}
+async function createTablesIfNotExist() {
+  if (!sql) return;
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS server_accounts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        photo_url TEXT,
+        provider TEXT DEFAULT 'password',
+        role TEXT DEFAULT 'user',
+        plan TEXT DEFAULT 'trial',
+        status TEXT,
+        registered_self BOOLEAN DEFAULT false,
+        created_at TEXT,
+        last_login_at TEXT,
+        trial_expires_date TEXT,
+        paid_expires_date TEXT,
+        custom_notes TEXT,
+        synced_at TEXT NOT NULL
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS server_messages (
+        id TEXT PRIMARY KEY,
+        sender_name TEXT NOT NULL,
+        sender_email TEXT NOT NULL,
+        sender_phone TEXT,
+        subject TEXT NOT NULL,
+        message TEXT NOT NULL,
+        category TEXT DEFAULT 'inquiry',
+        sent_at TEXT NOT NULL,
+        is_read BOOLEAN DEFAULT false,
+        replied_at TEXT,
+        reply_text TEXT,
+        ai_suggested_reply TEXT,
+        source TEXT DEFAULT 'in-app'
+      )
+    `;
+    console.log("[DB] Tables created/verified: server_accounts, server_messages");
+  } catch (err) {
+    console.warn("[DB] Table creation error:", err);
+  }
+}
+
+// server.ts
 import_dotenv.default.config();
 import_dotenv.default.config({ path: ".env.local", override: true });
+initDatabase();
 var OX_ALPHA_MODEL = "stealth/ox-alpha";
 var OX_ALPHA_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 function sleep(ms) {
@@ -137,12 +211,15 @@ function scheduleSaveMessages() {
   }, 1e3);
 }
 var inMemoryServerAccounts = /* @__PURE__ */ new Map();
-var _persistedAccounts = loadJson(ACCOUNTS_FILE, []);
-for (const acct of _persistedAccounts) {
-  if (acct?.id && acct?.email) inMemoryServerAccounts.set(acct.id, acct);
+if (!isDbAvailable()) {
+  const _persistedAccounts = loadJson(ACCOUNTS_FILE, []);
+  for (const acct of _persistedAccounts) {
+    if (acct?.id && acct?.email) inMemoryServerAccounts.set(acct.id, acct);
+  }
+  console.log(`[Storage] Loaded ${inMemoryServerAccounts.size} accounts from disk (JSON mode)`);
 }
-console.log(`[Storage] Loaded ${inMemoryServerAccounts.size} accounts from disk`);
-var inMemoryServerMessages = loadJson(MESSAGES_FILE, [
+var inMemoryServerMessages = [];
+var seedMessages = [
   {
     id: "msg-srv-welcome",
     senderName: "Sistem Pusat BukuKas",
@@ -166,13 +243,21 @@ var inMemoryServerMessages = loadJson(MESSAGES_FILE, [
     isRead: false,
     source: "gmail-web"
   }
-]);
-console.log(`[Storage] Loaded ${inMemoryServerMessages.length} messages from disk`);
+];
+if (!isDbAvailable()) {
+  const saved = loadJson(MESSAGES_FILE, seedMessages);
+  inMemoryServerMessages.push(...saved);
+  console.log(`[Storage] Loaded ${inMemoryServerMessages.length} messages from disk (JSON mode)`);
+}
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
   app.use(import_express.default.json({ limit: "10mb" }));
   app.use(import_express.default.urlencoded({ extended: true, limit: "10mb" }));
+  if (isDbAvailable()) {
+    await createTablesIfNotExist();
+    console.log("[DB] Neon Postgres ready for queries");
+  }
   app.get("/api/health", (req, res) => {
     res.json({
       status: "ok",
@@ -181,22 +266,67 @@ async function startServer() {
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       activeServerMessagesCount: inMemoryServerMessages.length,
       capabilities: ["inbound-email-receiver", "gmail-dispatcher", "license-manager", "rates-proxy", "ox-alpha-chat"],
-      alphaKeyConfigured: !!process.env.OPENROUTER_API_KEY
+      alphaKeyConfigured: !!process.env.OPENROUTER_API_KEY,
+      database: isDbAvailable() ? "neon-postgres" : "json-file"
     });
   });
-  app.get("/api/accounts", (req, res) => {
-    const accounts = Array.from(inMemoryServerAccounts.values()).sort(
-      (a, b) => new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime()
-    );
-    res.json({ success: true, total: accounts.length, accounts });
+  app.get("/api/accounts", async (req, res) => {
+    try {
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const rows = await sql2`SELECT * FROM server_accounts ORDER BY synced_at DESC`;
+        const accounts2 = rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          email: r.email,
+          photoUrl: r.photo_url,
+          provider: r.provider,
+          role: r.role,
+          plan: r.plan,
+          status: r.status,
+          registeredSelf: r.registered_self,
+          createdAt: r.created_at,
+          lastLoginAt: r.last_login_at,
+          trialExpiresDate: r.trial_expires_date,
+          paidExpiresDate: r.paid_expires_date,
+          customNotes: r.custom_notes,
+          syncedAt: r.synced_at
+        }));
+        return res.json({ success: true, total: accounts2.length, accounts: accounts2 });
+      }
+      const accounts = Array.from(inMemoryServerAccounts.values()).sort(
+        (a, b) => new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime()
+      );
+      res.json({ success: true, total: accounts.length, accounts });
+    } catch (err) {
+      console.error("[DB] GET /api/accounts error:", err);
+      const accounts = Array.from(inMemoryServerAccounts.values());
+      res.json({ success: true, total: accounts.length, accounts });
+    }
   });
-  app.post("/api/accounts/upsert", (req, res) => {
+  app.post("/api/accounts/upsert", async (req, res) => {
     try {
       const incoming = req.body?.accounts || (req.body?.account ? [req.body.account] : []);
       if (!Array.isArray(incoming) || incoming.length === 0) {
         return res.status(400).json({ error: "Field 'account' or 'accounts' array is required." });
       }
       let upserted = 0;
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        for (const raw of incoming) {
+          if (!raw?.id || !raw?.email) continue;
+          const email = String(raw.email).toLowerCase();
+          const customNotes = typeof raw.customNotes === "string" && !raw.customNotes.toLowerCase().includes("password") ? String(raw.customNotes) : void 0;
+          await sql2`
+            INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, trial_expires_date, paid_expires_date, custom_notes, synced_at)
+            VALUES (${String(raw.id)}, ${String(raw.name || email.split("@")[0])}, ${email}, ${raw.photoUrl ? String(raw.photoUrl) : null}, ${String(raw.provider || "password")}, ${String(raw.role || "user")}, ${String(raw.plan || "trial")}, ${raw.status ? String(raw.status) : null}, ${Boolean(raw.registeredSelf)}, ${String(raw.createdAt || now)}, ${String(raw.lastLoginAt || "-")}, ${raw.trialExpiresDate ? String(raw.trialExpiresDate) : null}, ${raw.paidExpiresDate ? String(raw.paidExpiresDate) : null}, ${customNotes || null}, ${now})
+            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, photo_url = EXCLUDED.photo_url, provider = EXCLUDED.provider, role = EXCLUDED.role, plan = EXCLUDED.plan, status = EXCLUDED.status, registered_self = EXCLUDED.registered_self, created_at = EXCLUDED.created_at, last_login_at = EXCLUDED.last_login_at, trial_expires_date = EXCLUDED.trial_expires_date, paid_expires_date = EXCLUDED.paid_expires_date, custom_notes = EXCLUDED.custom_notes, synced_at = EXCLUDED.synced_at
+          `;
+          upserted += 1;
+        }
+        return res.json({ success: true, upserted, total: upserted });
+      }
       for (const raw of incoming) {
         if (!raw?.id || !raw?.email) continue;
         inMemoryServerAccounts.set(String(raw.id), {
@@ -209,12 +339,12 @@ async function startServer() {
           plan: String(raw.plan || "trial"),
           status: raw.status ? String(raw.status) : void 0,
           registeredSelf: Boolean(raw.registeredSelf),
-          createdAt: String(raw.createdAt || (/* @__PURE__ */ new Date()).toISOString()),
+          createdAt: String(raw.createdAt || now),
           lastLoginAt: String(raw.lastLoginAt || "-"),
           trialExpiresDate: raw.trialExpiresDate ? String(raw.trialExpiresDate) : void 0,
           paidExpiresDate: raw.paidExpiresDate ? String(raw.paidExpiresDate) : void 0,
           customNotes: typeof raw.customNotes === "string" && !raw.customNotes.toLowerCase().includes("password") ? String(raw.customNotes) : void 0,
-          syncedAt: (/* @__PURE__ */ new Date()).toISOString()
+          syncedAt: now
         });
         upserted += 1;
       }
@@ -228,13 +358,38 @@ async function startServer() {
       return res.status(500).json({ error: err.message || "Account registry error" });
     }
   });
-  app.get("/api/business-email/messages", (req, res) => {
-    res.json({
-      success: true,
-      businessEmail: "admin@bukukas.ai.studio",
-      total: inMemoryServerMessages.length,
-      messages: inMemoryServerMessages
-    });
+  app.get("/api/business-email/messages", async (req, res) => {
+    try {
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const rows = await sql2`SELECT * FROM server_messages ORDER BY sent_at DESC`;
+        const messages = rows.map((r) => ({
+          id: r.id,
+          senderName: r.sender_name,
+          senderEmail: r.sender_email,
+          senderPhone: r.sender_phone,
+          subject: r.subject,
+          message: r.message,
+          category: r.category,
+          sentAt: r.sent_at,
+          isRead: r.is_read,
+          repliedAt: r.replied_at,
+          replyText: r.reply_text,
+          aiSuggestedReply: r.ai_suggested_reply,
+          source: r.source
+        }));
+        return res.json({ success: true, businessEmail: "admin@bukukas.ai.studio", total: messages.length, messages });
+      }
+      res.json({
+        success: true,
+        businessEmail: "admin@bukukas.ai.studio",
+        total: inMemoryServerMessages.length,
+        messages: inMemoryServerMessages
+      });
+    } catch (err) {
+      console.error("[DB] GET /api/business-email/messages error:", err);
+      res.json({ success: true, businessEmail: "admin@bukukas.ai.studio", total: inMemoryServerMessages.length, messages: inMemoryServerMessages });
+    }
   });
   async function generateAiReply(senderName, senderEmail, subject, message, category) {
     if (!process.env.OPENROUTER_API_KEY) return "";
@@ -287,8 +442,16 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
         aiSuggestedReply: aiSuggestedReply || void 0,
         source: source || "in-app"
       };
-      inMemoryServerMessages.unshift(serverMsg);
-      scheduleSaveMessages();
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        await sql2`
+          INSERT INTO server_messages (id, sender_name, sender_email, sender_phone, subject, message, category, sent_at, is_read, ai_suggested_reply, source)
+          VALUES (${serverMsg.id}, ${serverMsg.senderName}, ${serverMsg.senderEmail}, ${serverMsg.senderPhone || null}, ${serverMsg.subject}, ${serverMsg.message}, ${serverMsg.category}, ${serverMsg.sentAt}, ${false}, ${serverMsg.aiSuggestedReply || null}, ${serverMsg.source || "in-app"})
+        `;
+      } else {
+        inMemoryServerMessages.unshift(serverMsg);
+        scheduleSaveMessages();
+      }
       return res.json({
         success: true,
         message: "Pesan berhasil diterima di server email admin@bukukas.ai.studio",
@@ -323,8 +486,16 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
         aiSuggestedReply: aiSuggestedReply || void 0,
         source: "inbound-webhook"
       };
-      inMemoryServerMessages.unshift(serverMsg);
-      scheduleSaveMessages();
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        await sql2`
+          INSERT INTO server_messages (id, sender_name, sender_email, sender_phone, subject, message, category, sent_at, is_read, ai_suggested_reply, source)
+          VALUES (${serverMsg.id}, ${serverMsg.senderName}, ${serverMsg.senderEmail}, ${serverMsg.senderPhone || null}, ${serverMsg.subject}, ${serverMsg.message}, ${serverMsg.category}, ${serverMsg.sentAt}, ${false}, ${serverMsg.aiSuggestedReply || null}, ${serverMsg.source || "inbound-webhook"})
+        `;
+      } else {
+        inMemoryServerMessages.unshift(serverMsg);
+        scheduleSaveMessages();
+      }
       return res.json({
         success: true,
         status: "delivered",
@@ -336,11 +507,20 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
       return res.status(500).json({ error: err.message || "Inbound receiver error" });
     }
   });
-  app.post("/api/business-email/reply", (req, res) => {
+  app.post("/api/business-email/reply", async (req, res) => {
     try {
       const { messageId, replyText } = req.body;
       if (!messageId || !replyText) {
         return res.status(400).json({ error: "messageId and replyText are required." });
+      }
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        await sql2`
+          UPDATE server_messages SET reply_text = ${replyText}, replied_at = ${now}, is_read = true
+          WHERE id = ${messageId}
+        `;
+        return res.json({ success: true, message: "Balasan berhasil dikirim dari admin@bukukas.ai.studio" });
       }
       const msg = inMemoryServerMessages.find((m) => m.id === messageId);
       if (msg) {
@@ -358,12 +538,17 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
       return res.status(500).json({ error: err.message || "Internal server error" });
     }
   });
-  app.delete("/api/business-email/:id", (req, res) => {
+  app.delete("/api/business-email/:id", async (req, res) => {
     const { id } = req.params;
-    const idx = inMemoryServerMessages.findIndex((m) => m.id === id);
-    if (idx !== -1) {
-      inMemoryServerMessages.splice(idx, 1);
-      scheduleSaveMessages();
+    if (isDbAvailable()) {
+      const sql2 = getSql();
+      await sql2`DELETE FROM server_messages WHERE id = ${id}`;
+    } else {
+      const idx = inMemoryServerMessages.findIndex((m) => m.id === id);
+      if (idx !== -1) {
+        inMemoryServerMessages.splice(idx, 1);
+        scheduleSaveMessages();
+      }
     }
     return res.json({ success: true, message: "Pesan dihapus dari server." });
   });

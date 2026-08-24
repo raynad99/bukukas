@@ -15,7 +15,7 @@ import { useApp } from '../context/AppContext';
 import { calculateTrialStatus } from '../utils/trialHelper';
 
 export const TrialBanner: React.FC = () => {
-  const { currentUser, setIsContactDevModalOpen, setActiveView } = useApp();
+  const { currentUser, setIsContactDevModalOpen, setIsCryptoPaymentModalOpen, setActiveView } = useApp();
 
   if (!currentUser) return null;
 
@@ -91,35 +91,69 @@ export const TrialBanner: React.FC = () => {
     );
   }
 
-  // If Trial is Expired
+  // If Trial is Expired — masa tenggang 30 hari sebelum akun dihapus otomatis
   if (trialInfo.isExpired) {
+    const daysLeft = trialInfo.daysUntilAutoDelete ?? 30;
+    const urgent = daysLeft <= 7;
     return (
-      <div className="mb-5 rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 text-rose-950 shadow-md dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200">
+      <div
+        className={`mb-5 rounded-2xl border-2 p-4 shadow-md ${
+          urgent
+            ? 'border-rose-400 bg-rose-50 animate-pulse dark:border-rose-700 dark:bg-rose-950/60'
+            : 'border-rose-300 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/50'
+        }`}
+      >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-200 text-rose-800 dark:bg-rose-900 dark:text-rose-300">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-200 text-rose-800 dark:bg-rose-900 dark:text-rose-300">
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-black text-rose-900 dark:text-rose-200 uppercase tracking-wider">
-                  Masa Trial 7 Hari Berakhir
+                  ⚠️ Segera Perpanjang Akun Anda
                 </span>
                 <span className="rounded-md bg-rose-200 px-1.5 py-0.5 text-[10px] font-bold text-rose-900 dark:bg-rose-900 dark:text-rose-200">
                   Expired
                 </span>
               </div>
-              <p className="text-xs text-rose-800 dark:text-rose-300 mt-0.5">
-                Masa percobaan gratis 7 hari Anda telah habis. Silakan hubungi pengembang di{' '}
-                <span className="font-mono font-bold">admin@bukukas.ai.studio</span> untuk mengaktifkan Lisensi Lifetime atau berlangganan.
+              <p className="text-xs font-semibold text-rose-800 dark:text-rose-200 mt-1 max-w-xl">
+                Segera perpanjang, apabila tidak diperpanjang maka akun akan terhapus otomatis dalam {daysLeft} hari
+                {(trialInfo.autoDeleteDate ? ` (tanggal ${trialInfo.autoDeleteDate})` : '')}.
               </p>
+              <p className="text-[11px] text-rose-700 dark:text-rose-300 mt-0.5">
+                Seluruh data pembukuan Anda akan hilang permanen setelah tanggal tersebut. Hubungi pengembang di{' '}
+                <span className="font-mono font-bold">admin@bukukas.ai.studio</span> untuk aktivasi Lisensi Lifetime.
+              </p>
+
+              {/* Countdown bar masa tenggang */}
+              <div className="mt-2 flex items-center gap-2 max-w-xs">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-rose-200 dark:bg-rose-900">
+                  <div
+                    className="h-full rounded-full bg-rose-600 dark:bg-rose-500"
+                    style={{ width: `${Math.max(4, Math.min(100, (daysLeft / 30) * 100))}%` }}
+                  />
+                </div>
+                <span className="text-[10px] font-bold text-rose-700 dark:text-rose-300">
+                  {daysLeft}/30 hari
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-col gap-2 shrink-0">
+            <button
+              onClick={() => setIsCryptoPaymentModalOpen(true)}
+              className={`flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold text-white shadow-sm active:scale-95 transition ${
+                urgent ? 'bg-rose-700 hover:bg-rose-800 animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500'
+              }`}
+            >
+              <Zap className="h-3.5 w-3.5 text-amber-300" />
+              <span>Perpanjang Sekarang ($10 / 1 Tahun)</span>
+            </button>
             <button
               onClick={() => setIsContactDevModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-rose-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-800 active:scale-95 transition"
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-rose-300 bg-white px-3.5 py-2 text-xs font-bold text-rose-700 shadow-xs hover:bg-rose-50 transition dark:border-rose-800 dark:bg-slate-800 dark:text-rose-300"
             >
               <Mail className="h-3.5 w-3.5" />
               <span>Hubungi Dev / Minta Lifetime</span>

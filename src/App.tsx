@@ -28,6 +28,7 @@ import { ReportsView } from './components/ReportsView';
 import { SecurityView } from './components/SecurityView';
 import { Sidebar } from './components/Sidebar';
 import { TransactionsView } from './components/TransactionsView';
+import { TrialBanner } from './components/TrialBanner';
 import { AppProvider, useApp } from './context/AppContext';
 
 const AppContent: React.FC = () => {
@@ -55,6 +56,9 @@ const AppContent: React.FC = () => {
 
           {/* View Container */}
           <main className="flex-1 px-3 py-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto pb-24 md:pb-12">
+            {/* Banner status lisensi / peringatan trial habis (user login) */}
+            {!isGuest && activeView !== 'auth' && <TrialBanner />}
+
             {activeView === 'dashboard' && <DashboardView />}
             {activeView === 'transactions' && <TransactionsView />}
             {activeView === 'ai' && <AiChatBot isEmbedded={true} />}

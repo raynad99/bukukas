@@ -10,6 +10,25 @@ export interface TrialStatusInfo {
   formattedExpiry: string;
   badgeLabel: string;
   badgeClass: string;
+  /** Grace period: akun expired dihapus otomatis 30 hari setelah kedaluwarsa */
+  autoDeleteDate?: string;
+  daysUntilAutoDelete?: number;
+}
+
+/** Masa tenggang sebelum akun expired dihapus otomatis (hari) */
+export const ACCOUNT_AUTO_DELETE_GRACE_DAYS = 30;
+
+function computeAutoDelete(expiryTimeMs: number): { autoDeleteDate: string; daysUntilAutoDelete: number } {
+  const deleteAt = new Date(expiryTimeMs + ACCOUNT_AUTO_DELETE_GRACE_DAYS * 24 * 60 * 60 * 1000);
+  const daysLeft = Math.max(0, Math.ceil((deleteAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+  return {
+    autoDeleteDate: deleteAt.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }),
+    daysUntilAutoDelete: daysLeft,
+  };
 }
 
 export const calculateTrialStatus = (user: UserProfile | null): TrialStatusInfo => {
@@ -58,6 +77,7 @@ export const calculateTrialStatus = (user: UserProfile | null): TrialStatusInfo 
     });
 
     if (isExpired) {
+      const grace = computeAutoDelete(paidExpires.getTime());
       return {
         daysRemaining: 0,
         isExpired: true,
@@ -68,6 +88,7 @@ export const calculateTrialStatus = (user: UserProfile | null): TrialStatusInfo 
         formattedExpiry,
         badgeLabel: '⚠️ Paket 1 Tahun Habis',
         badgeClass: 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800',
+        ...grace,
       };
     }
 
@@ -101,6 +122,7 @@ export const calculateTrialStatus = (user: UserProfile | null): TrialStatusInfo 
   });
 
   if (isExpired) {
+    const grace = computeAutoDelete(expiresDate.getTime());
     return {
       daysRemaining: 0,
       isExpired: true,
@@ -111,6 +133,7 @@ export const calculateTrialStatus = (user: UserProfile | null): TrialStatusInfo 
       formattedExpiry,
       badgeLabel: '⚠️ Trial Habis (Expired)',
       badgeClass: 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800',
+      ...grace,
     };
   }
 

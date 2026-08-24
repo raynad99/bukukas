@@ -157,6 +157,27 @@ describe('Fitur Lisensi / Trial (TrialBanner)', () => {
     expect(s.daysRemaining).toBe(0);
   });
 
+  test('REGRESI: akun expired punya tenggang hapus otomatis 30 hari', () => {
+    const s = calculateTrialStatus(
+      mkUser({
+        trialStartDate: new Date(Date.now() - 10 * 86400000).toISOString(),
+        trialExpiresDate: new Date(Date.now() - 5 * 86400000).toISOString(), // expired 5 hari lalu
+      })
+    );
+    expect(s.isExpired).toBe(true);
+    // Sisa masa tenggang = 30 - 5 = 25 hari (toleransi pembulatan ±1)
+    expect(s.daysUntilAutoDelete!).toBeGreaterThanOrEqual(24);
+    expect(s.daysUntilAutoDelete!).toBeLessThanOrEqual(26);
+    expect(s.autoDeleteDate).toBeTruthy();
+
+    // Akun aktif TIDAK boleh punya tanggal hapus
+    const active = calculateTrialStatus(
+      mkUser({ trialExpiresDate: new Date(Date.now() + 3 * 86400000).toISOString() })
+    );
+    expect(active.isExpired).toBe(false);
+    expect(active.daysUntilAutoDelete).toBeUndefined();
+  });
+
   test('Paket Pro 1 Tahun aktif', () => {
     const s = calculateTrialStatus(
       mkUser({ plan: 'paid', paidExpiresDate: new Date(Date.now() + 300 * 86400000).toISOString() })

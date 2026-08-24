@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 
@@ -92,6 +93,56 @@ async function generateWithOxAlpha(options: {
   return null;
 }
 
+// ==================== Persistent JSON Storage ====================
+const DATA_DIR = path.join(process.cwd(), ".server-data");
+const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
+const MESSAGES_FILE = path.join(DATA_DIR, "messages.json");
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadJson<T>(filePath: string, fallback: T): T {
+  try {
+    ensureDataDir();
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      return JSON.parse(raw) as T;
+    }
+  } catch (err) {
+    console.warn(`Failed to load ${filePath}:`, err);
+  }
+  return fallback;
+}
+
+function saveJson(filePath: string, data: unknown) {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.warn(`Failed to save ${filePath}:`, err);
+  }
+}
+
+// Debounced save — avoids writing on every single update
+let _accountsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let _messagesSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleSaveAccounts() {
+  if (_accountsSaveTimer) clearTimeout(_accountsSaveTimer);
+  _accountsSaveTimer = setTimeout(() => {
+    saveJson(ACCOUNTS_FILE, Array.from(inMemoryServerAccounts.values()));
+  }, 1000);
+}
+
+function scheduleSaveMessages() {
+  if (_messagesSaveTimer) clearTimeout(_messagesSaveTimer);
+  _messagesSaveTimer = setTimeout(() => {
+    saveJson(MESSAGES_FILE, inMemoryServerMessages);
+  }, 1000);
+}
+
+// ==================== In-Memory Stores (loaded from disk) ====================
 // In-memory message store for backend synchronization & backup
 export interface ServerBusinessMessage {
   id: string;
@@ -130,7 +181,14 @@ interface ServerAccountRecord {
 }
 const inMemoryServerAccounts = new Map<string, ServerAccountRecord>();
 
-const inMemoryServerMessages: ServerBusinessMessage[] = [
+// Load persisted accounts from disk on startup
+const _persistedAccounts = loadJson<ServerAccountRecord[]>(ACCOUNTS_FILE, []);
+for (const acct of _persistedAccounts) {
+  if (acct?.id && acct?.email) inMemoryServerAccounts.set(acct.id, acct);
+}
+console.log(`[Storage] Loaded ${inMemoryServerAccounts.size} accounts from disk`);
+
+const inMemoryServerMessages: ServerBusinessMessage[] = loadJson<ServerBusinessMessage[]>(MESSAGES_FILE, [
   {
     id: 'msg-srv-welcome',
     senderName: 'Sistem Pusat BukuKas',
@@ -154,7 +212,8 @@ const inMemoryServerMessages: ServerBusinessMessage[] = [
     isRead: false,
     source: 'gmail-web',
   },
-];
+]);
+console.log(`[Storage] Loaded ${inMemoryServerMessages.length} messages from disk`);
 
 async function startServer() {
   const app = express();
@@ -217,6 +276,7 @@ async function startServer() {
         });
         upserted += 1;
       }
+      scheduleSaveAccounts();
 
       return res.json({
         success: true,
@@ -298,6 +358,7 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
       };
 
       inMemoryServerMessages.unshift(serverMsg);
+      scheduleSaveMessages();
 
       return res.json({
         success: true,
@@ -340,6 +401,7 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
       };
 
       inMemoryServerMessages.unshift(serverMsg);
+      scheduleSaveMessages();
 
       return res.json({
         success: true,
@@ -366,6 +428,7 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
         msg.replyText = replyText;
         msg.repliedAt = new Date().toISOString();
         msg.isRead = true;
+        scheduleSaveMessages();
       }
 
       return res.json({
@@ -384,6 +447,7 @@ Buatlah draf balasan resmi yang ramah, sopan, profesional, dan ringkas dalam Bah
     const idx = inMemoryServerMessages.findIndex(m => m.id === id);
     if (idx !== -1) {
       inMemoryServerMessages.splice(idx, 1);
+      scheduleSaveMessages();
     }
     return res.json({ success: true, message: "Pesan dihapus dari server." });
   });

@@ -455,17 +455,53 @@ async function startServer() {
       res.json({ success: true, total: accounts.length, accounts });
     }
   });
+  app.delete("/api/accounts/cleanup", async (req, res) => {
+    const PROTECTED_EMAILS = ["admin@bukukas.ai.studio", "indoclickshop@gmail.com"];
+    try {
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const countResult = await sql2`SELECT COUNT(*)::int as cnt FROM server_accounts WHERE email NOT IN ('admin@bukukas.ai.studio', 'indoclickshop@gmail.com')`;
+        const count = countResult[0]?.cnt ?? 0;
+        if (count > 0) {
+          await sql2`DELETE FROM server_accounts WHERE email NOT IN ('admin@bukukas.ai.studio', 'indoclickshop@gmail.com')`;
+        }
+        console.log(`[DB] Cleanup: deleted ${count} non-admin accounts`);
+        return res.json({ success: true, deleted: count, message: `${count} akun sampah dihapus. Hanya akun admin/dev yang tersisa.` });
+      }
+      let deleted = 0;
+      for (const [key, acc] of inMemoryServerAccounts.entries()) {
+        if (!PROTECTED_EMAILS.includes(acc.email)) {
+          inMemoryServerAccounts.delete(key);
+          deleted++;
+        }
+      }
+      res.json({ success: true, deleted, message: `${deleted} akun sampah dihapus.` });
+    } catch (err) {
+      console.error("[DB] Cleanup error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
   app.post("/api/accounts/upsert", async (req, res) => {
     try {
       const incoming = req.body?.accounts || (req.body?.account ? [req.body.account] : []);
       if (!Array.isArray(incoming) || incoming.length === 0) {
         return res.status(400).json({ error: "Field 'account' or 'accounts' array is required." });
       }
+      const filtered = incoming.filter((raw) => {
+        const email = String(raw?.email || "").toLowerCase();
+        if (email.includes("@test.dev") || email.includes("stress-user") || email.includes("tes-isolasi") || email.includes("tes@") || email.includes("persist-") || email.includes("e2e-test") || email.includes("neon-test") || email.includes("test-sync")) {
+          return false;
+        }
+        return true;
+      });
+      if (filtered.length === 0) {
+        return res.json({ success: true, upserted: 0, total: 0, message: "No non-test accounts to sync." });
+      }
       let upserted = 0;
       const now = (/* @__PURE__ */ new Date()).toISOString();
       if (isDbAvailable()) {
         const sql2 = getSql();
-        for (const raw of incoming) {
+        for (const raw of filtered) {
           if (!raw?.id || !raw?.email) continue;
           const email = String(raw.email).toLowerCase();
           const customNotes = typeof raw.customNotes === "string" && !raw.customNotes.toLowerCase().includes("password") ? String(raw.customNotes) : void 0;
@@ -478,7 +514,7 @@ async function startServer() {
         }
         return res.json({ success: true, upserted, total: upserted });
       }
-      for (const raw of incoming) {
+      for (const raw of filtered) {
         if (!raw?.id || !raw?.email) continue;
         inMemoryServerAccounts.set(String(raw.id), {
           id: String(raw.id),

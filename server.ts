@@ -492,6 +492,166 @@ async function startServer() {
     }
   });
 
+  // ==================== Referral / Invite System ====================
+  // Generate a unique invite code for admin/dev users
+  app.post('/api/referral/generate', async (req, res) => {
+    try {
+      const { userId, email } = req.body;
+      if (!userId || !email) {
+        return res.status(400).json({ success: false, error: 'userId and email required' });
+      }
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const existing = await sql`SELECT code FROM referral_codes WHERE user_id = ${userId} AND is_active = true LIMIT 1`;
+        if (existing.length > 0) {
+          return res.json({ success: true, code: existing[0].code, isNew: false });
+        }
+
+        const code = 'BK' + Math.random().toString(36).slice(2, 10).toUpperCase();
+        const id = `ref-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        await sql`
+          INSERT INTO referral_codes (id, user_id, email, code, created_at, is_active)
+          VALUES (${id}, ${userId}, ${email.toLowerCase()}, ${code}, ${new Date().toISOString()}, true)
+        `;
+        console.log(`[Referral] Generated code ${code} for ${email}`);
+        return res.json({ success: true, code, isNew: true });
+      }
+
+      const code = 'BK' + Math.random().toString(36).slice(2, 10).toUpperCase();
+      return res.json({ success: true, code, isNew: true });
+    } catch (err: any) {
+      console.error('[Referral] Generate error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Get referral stats for a user
+  app.get('/api/referral/stats/:userId', async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ success: false, error: 'userId required' });
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const referrals = await sql`SELECT * FROM referrals WHERE referrer_user_id = ${userId} ORDER BY created_at DESC`;
+        const codeRow = await sql`SELECT code FROM referral_codes WHERE user_id = ${userId} AND is_active = true LIMIT 1`;
+        const totalReward = await sql`SELECT COALESCE(SUM(reward_amount), 0)::int as total FROM referrals WHERE referrer_user_id = ${userId} AND reward_paid = true`;
+        const pendingReward = await sql`SELECT COALESCE(SUM(reward_amount), 0)::int as total FROM referrals WHERE referrer_user_id = ${userId} AND reward_paid = false AND status = 'converted'`;
+
+        return res.json({
+          success: true,
+          code: codeRow[0]?.code || null,
+          totalReferrals: referrals.length,
+          convertedReferrals: referrals.filter((r: any) => r.status === 'converted').length,
+          totalRewardEarned: totalReward[0]?.total ?? 0,
+          pendingReward: pendingReward[0]?.total ?? 0,
+          referrals: referrals.map((r: any) => ({
+            id: r.id,
+            referredEmail: r.referred_email,
+            referredName: r.referred_name,
+            status: r.status,
+            rewardAmount: r.reward_amount,
+            rewardPaid: r.reward_paid,
+            referredPlan: r.referred_plan,
+            createdAt: r.created_at,
+          })),
+        });
+      }
+
+      return res.json({ success: true, code: null, totalReferrals: 0, convertedReferrals: 0, totalRewardEarned: 0, pendingReward: 0, referrals: [] });
+    } catch (err: any) {
+      console.error('[Referral] Stats error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Track a new referral (called when user registers via invite link)
+  app.post('/api/referral/track', async (req, res) => {
+    try {
+      const { code, referredEmail, referredName, referredUserId } = req.body;
+      if (!code || !referredEmail) {
+        return res.status(400).json({ success: false, error: 'code and referredEmail required' });
+      }
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const codeRow = await sql`SELECT * FROM referral_codes WHERE code = ${code.toUpperCase()} AND is_active = true LIMIT 1`;
+        if (codeRow.length === 0) {
+          return res.status(404).json({ success: false, error: 'Kode undangan tidak valid.' });
+        }
+
+        const referrer = codeRow[0];
+        const id = `ref-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        const existing = await sql`SELECT id FROM referrals WHERE referred_email = ${referredEmail.toLowerCase()} LIMIT 1`;
+        if (existing.length > 0) {
+          return res.json({ success: true, message: 'Already referred' });
+        }
+
+        await sql`
+          INSERT INTO referrals (id, referrer_user_id, referrer_email, referred_email, referred_user_id, referred_name, status, created_at)
+          VALUES (${id}, ${referrer.user_id}, ${referrer.email}, ${referredEmail.toLowerCase()}, ${referredUserId || null}, ${referredName || null}, 'registered', ${new Date().toISOString()})
+        `;
+        console.log(`[Referral] ${referredEmail} registered via code ${code} from ${referrer.email}`);
+        return res.json({ success: true, referrerName: referrer.email });
+      }
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error('[Referral] Track error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Mark referral as converted (when referred user upgrades to paid plan)
+  app.post('/api/referral/convert', async (req, res) => {
+    try {
+      const { referredEmail } = req.body;
+      if (!referredEmail) {
+        return res.status(400).json({ success: false, error: 'referredEmail required' });
+      }
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        await sql`
+          UPDATE referrals SET status = 'converted', referred_plan = 'paid', referred_paid_at = ${new Date().toISOString()}
+          WHERE referred_email = ${referredEmail.toLowerCase()} AND status = 'registered'
+        `;
+        console.log(`[Referral] ${referredEmail} converted to paid plan`);
+        return res.json({ success: true });
+      }
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error('[Referral] Convert error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Resolve referral code to referrer info
+  app.get('/api/referral/resolve/:code', async (req, res) => {
+    try {
+      const { code } = req.params;
+      if (!code) return res.status(400).json({ success: false, error: 'code required' });
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const codeRow = await sql`SELECT * FROM referral_codes WHERE code = ${code.toUpperCase()} AND is_active = true LIMIT 1`;
+        if (codeRow.length === 0) {
+          return res.status(404).json({ success: false, error: 'Kode undangan tidak valid atau sudah tidak aktif.' });
+        }
+        return res.json({ success: true, referrerName: codeRow[0].email.split('@')[0], code: codeRow[0].code });
+      }
+
+      return res.status(404).json({ success: false, error: 'Database tidak tersedia.' });
+    } catch (err: any) {
+      console.error('[Referral] Resolve error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({

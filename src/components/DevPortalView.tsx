@@ -36,10 +36,13 @@ import {
   EyeOff,
   Edit2,
   Lock,
+  Gift,
+  Link2,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { BusinessInboxMessage, SubscriptionPlan, UserProfile, UserRole } from '../types';
 import { calculateTrialStatus } from '../utils/trialHelper';
+import ReferralDashboard from "./ReferralDashboard";
 
 export const DevPortalView: React.FC = () => {
   const {
@@ -64,7 +67,7 @@ export const DevPortalView: React.FC = () => {
     verifyCryptoPaymentByDev,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'crypto' | 'mailbox'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'crypto' | 'mailbox' | 'referral'>('overview');
   const [systemHealth, setSystemHealth] = useState<any>(null);
   const [isHealthLoading, setIsHealthLoading] = useState(false);
   const [userFilter, setUserFilter] = useState<'all' | 'trial' | 'expired' | 'lifetime' | 'paid' | 'self'>('all');
@@ -377,6 +380,18 @@ export const DevPortalView: React.FC = () => {
                 {unreadCount} Baru
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('referral')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+              activeTab === 'referral'
+                ? 'bg-white text-slate-900 shadow-md'
+                : 'text-slate-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Gift className="h-4 w-4 text-amber-400" />
+            <span>Referral & Undangan</span>
           </button>
         </div>
       </div>
@@ -1271,6 +1286,13 @@ export const DevPortalView: React.FC = () => {
             )}
           </div>
         </div>
+        </div>
+      )}
+
+      {/* TAB 5: REFERRAL & INVITE SYSTEM */}
+      {activeTab === 'referral' && (
+        <div className="space-y-4">
+          <ReferralDashboard />
         </div>
       )}
 

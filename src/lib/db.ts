@@ -98,7 +98,36 @@ export async function createTablesIfNotExist(): Promise<void> {
       )
     `;
 
-    console.log('[DB] Tables created/verified: server_accounts, server_messages, verification_tokens, user_financial_data');
+    // Referral system — invite links for admin/dev lifetime accounts
+    await sql`
+      CREATE TABLE IF NOT EXISTS referral_codes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL DEFAULT NOW()::TEXT,
+        is_active BOOLEAN DEFAULT true
+      )
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS referrals (
+        id TEXT PRIMARY KEY,
+        referrer_user_id TEXT NOT NULL,
+        referrer_email TEXT NOT NULL,
+        referred_email TEXT NOT NULL,
+        referred_user_id TEXT,
+        referred_name TEXT,
+        status TEXT DEFAULT 'pending',
+        reward_amount NUMERIC DEFAULT 30000,
+        reward_paid BOOLEAN DEFAULT false,
+        referred_plan TEXT,
+        referred_paid_at TEXT,
+        created_at TEXT NOT NULL DEFAULT NOW()::TEXT
+      )
+    `;
+
+    console.log('[DB] Tables created/verified: server_accounts, server_messages, verification_tokens, user_financial_data, referral_codes, referrals');
   } catch (err) {
     console.warn('[DB] Table creation error:', err);
   }

@@ -319,7 +319,7 @@ describe('Fitur Backend API (server.ts)', () => {
   }, 60000);
 
   test('REGRESI ISOLASI: registry akun tidak pernah menyimpan password', async () => {
-    const uniq = `isolasi-${Date.now()}@test.dev`;
+    const uniq = `isolasi-${Date.now()}@backtest.dev`;
     await fetch(`${BASE}/api/accounts/upsert`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

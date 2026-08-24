@@ -472,6 +472,36 @@ async function startServer() {
     }
   });
 
+  // Account Cleanup — DELETE all non-admin/non-dev accounts
+  app.delete('/api/accounts/cleanup', async (req, res) => {
+    const PROTECTED_EMAILS = ['admin@bukukas.ai.studio', 'indoclickshop@gmail.com'];
+    try {
+      if (isDbAvailable()) {
+        const sql = getSql();
+        // First count what will be deleted
+        const countResult = await sql`SELECT COUNT(*)::int as cnt FROM server_accounts WHERE email NOT IN ('admin@bukukas.ai.studio', 'indoclickshop@gmail.com')`;
+        const count = countResult[0]?.cnt ?? 0;
+        if (count > 0) {
+          await sql`DELETE FROM server_accounts WHERE email NOT IN ('admin@bukukas.ai.studio', 'indoclickshop@gmail.com')`;
+        }
+        console.log(`[DB] Cleanup: deleted ${count} non-admin accounts`);
+        return res.json({ success: true, deleted: count, message: `${count} akun sampah dihapus. Hanya akun admin/dev yang tersisa.` });
+      }
+      // JSON fallback
+      let deleted = 0;
+      for (const [key, acc] of inMemoryServerAccounts.entries()) {
+        if (!PROTECTED_EMAILS.includes(acc.email)) {
+          inMemoryServerAccounts.delete(key);
+          deleted++;
+        }
+      }
+      res.json({ success: true, deleted, message: `${deleted} akun sampah dihapus.` });
+    } catch (err: any) {
+      console.error('[DB] Cleanup error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Account Registry - upsert one account or a batch: { account } | { accounts: [...] }
   // Passwords and other secrets are stripped before persisting.
   app.post("/api/accounts/upsert", async (req, res) => {
@@ -481,12 +511,24 @@ async function startServer() {
         return res.status(400).json({ error: "Field 'account' or 'accounts' array is required." });
       }
 
+      // Filter out test accounts (stress test, isolation test, etc.)
+      const filtered = incoming.filter((raw: any) => {
+        const email = String(raw?.email || '').toLowerCase();
+        if (email.includes('@test.dev') || email.includes('stress-user') || email.includes('tes-isolasi') || email.includes('tes@') || email.includes('persist-') || email.includes('e2e-test') || email.includes('neon-test') || email.includes('test-sync')) {
+          return false; // Reject test accounts
+        }
+        return true;
+      });
+      if (filtered.length === 0) {
+        return res.json({ success: true, upserted: 0, total: 0, message: 'No non-test accounts to sync.' });
+      }
+
       let upserted = 0;
       const now = new Date().toISOString();
 
       if (isDbAvailable()) {
         const sql = getSql();
-        for (const raw of incoming) {
+        for (const raw of filtered) {
           if (!raw?.id || !raw?.email) continue;
           const email = String(raw.email).toLowerCase();
           const customNotes = typeof raw.customNotes === "string" && !raw.customNotes.toLowerCase().includes("password")
@@ -502,7 +544,7 @@ async function startServer() {
       }
 
       // JSON fallback
-      for (const raw of incoming) {
+      for (const raw of filtered) {
         if (!raw?.id || !raw?.email) continue;
         inMemoryServerAccounts.set(String(raw.id), {
           id: String(raw.id),

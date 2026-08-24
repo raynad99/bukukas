@@ -133,7 +133,26 @@ export async function createTablesIfNotExist(): Promise<void> {
       )
     `;
 
-    console.log('[DB] Tables created/verified: server_accounts, server_messages, verification_tokens, user_financial_data, referral_codes, referrals');
+    // Seller applications — users apply to become referral sellers
+    await sql`
+      CREATE TABLE IF NOT EXISTS seller_applications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_email TEXT NOT NULL,
+        user_name TEXT NOT NULL,
+        upline_user_id TEXT,
+        upline_email TEXT,
+        upline_name TEXT,
+        status TEXT DEFAULT 'pending',
+        reason TEXT,
+        admin_notes TEXT,
+        reviewed_at TEXT,
+        reviewed_by TEXT,
+        created_at TEXT NOT NULL DEFAULT NOW()::TEXT
+      )
+    `;
+
+    console.log('[DB] Tables created/verified: server_accounts, server_messages, verification_tokens, user_financial_data, referral_codes, referrals, seller_applications');
   } catch (err) {
     console.warn('[DB] Table creation error:', err);
   }

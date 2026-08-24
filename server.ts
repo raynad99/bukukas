@@ -652,6 +652,157 @@ async function startServer() {
     }
   });
 
+  // ==================== Seller Application System ====================
+  // User applies to become a referral seller (needs admin approval + lifetime upgrade)
+  app.post('/api/seller/apply', async (req, res) => {
+    try {
+      const { userId, email, name, uplineUserId, uplineEmail, uplineName, reason } = req.body;
+      if (!userId || !email || !name) {
+        return res.status(400).json({ success: false, error: 'userId, email, and name required' });
+      }
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        // Check if already applied
+        const existing = await sql`SELECT id, status FROM seller_applications WHERE user_id = ${userId} AND status IN ('pending', 'approved') LIMIT 1`;
+        if (existing.length > 0) {
+          return res.json({ success: true, status: existing[0].status, message: 'Anda sudah mengajukan sebelumnya.' });
+        }
+
+        const id = `seller-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        await sql`
+          INSERT INTO seller_applications (id, user_id, user_email, user_name, upline_user_id, upline_email, upline_name, status, reason, created_at)
+          VALUES (${id}, ${userId}, ${email.toLowerCase()}, ${name}, ${uplineUserId || null}, ${uplineEmail || null}, ${uplineName || null}, 'pending', ${reason || null}, ${new Date().toISOString()})
+        `;
+        console.log(`[Seller] Application submitted by ${email} (upline: ${uplineEmail || 'none'})`);
+        return res.json({ success: true, status: 'pending', message: 'Pengajuan seller berhasil dikirim. Menunggu persetujuan admin.' });
+      }
+
+      return res.json({ success: true, status: 'pending', message: 'Pengajuan seller berhasil (mode offline).' });
+    } catch (err: any) {
+      console.error('[Seller] Apply error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // List all seller applications (admin only)
+  app.get('/api/seller/applications', async (req, res) => {
+    try {
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const rows = await sql`SELECT * FROM seller_applications ORDER BY created_at DESC`;
+        const applications = rows.map((r: any) => ({
+          id: r.id,
+          userId: r.user_id,
+          userEmail: r.user_email,
+          userName: r.user_name,
+          uplineUserId: r.upline_user_id,
+          uplineEmail: r.upline_email,
+          uplineName: r.upline_name,
+          status: r.status,
+          reason: r.reason,
+          adminNotes: r.admin_notes,
+          reviewedAt: r.reviewed_at,
+          reviewedBy: r.reviewed_by,
+          createdAt: r.created_at,
+        }));
+        return res.json({ success: true, total: applications.length, applications });
+      }
+
+      return res.json({ success: true, total: 0, applications: [] });
+    } catch (err: any) {
+      console.error('[Seller] List error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Approve or reject a seller application
+  app.post('/api/seller/review', async (req, res) => {
+    try {
+      const { applicationId, action, adminNotes, adminUserId } = req.body;
+      if (!applicationId || !action) {
+        return res.status(400).json({ success: false, error: 'applicationId and action required' });
+      }
+      if (!['approved', 'rejected'].includes(action)) {
+        return res.status(400).json({ success: false, error: 'action must be approved or rejected' });
+      }
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const appRow = await sql`SELECT * FROM seller_applications WHERE id = ${applicationId} LIMIT 1`;
+        if (appRow.length === 0) {
+          return res.status(404).json({ success: false, error: 'Pengajuan tidak ditemukan.' });
+        }
+
+        const now = new Date().toISOString();
+        await sql`
+          UPDATE seller_applications SET status = ${action}, admin_notes = ${adminNotes || null}, reviewed_at = ${now}, reviewed_by = ${adminUserId || null}
+          WHERE id = ${applicationId}
+        `;
+
+        // If approved: upgrade user to lifetime + generate referral code
+        if (action === 'approved') {
+          const applicant = appRow[0];
+          // Upgrade user to lifetime
+          await sql`
+            UPDATE server_accounts SET plan = 'lifetime', status = 'active'
+            WHERE id = ${applicant.user_id}
+          `;
+          // Generate referral code for new seller
+          const code = 'BK' + Math.random().toString(36).slice(2, 10).toUpperCase();
+          const refId = `ref-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          try {
+            await sql`
+              INSERT INTO referral_codes (id, user_id, email, code, created_at, is_active)
+              VALUES (${refId}, ${applicant.user_id}, ${applicant.user_email}, ${code}, ${now}, true)
+              ON CONFLICT (id) DO NOTHING
+            `;
+          } catch (e) { /* code might already exist */ }
+          console.log(`[Seller] ${applicant.user_email} approved → lifetime + referral code ${code}`);
+          return res.json({ success: true, action, referralCode: code, message: `${applicant.user_name} berhasil di-upgrade ke Lifetime VIP + mendapat kode referral.` });
+        }
+
+        console.log(`[Seller] Application ${applicationId} ${action}`);
+        return res.json({ success: true, action, message: `Pengajuan ${action === 'approved' ? 'disetujui' : 'ditolak'}.` });
+      }
+
+      return res.json({ success: true, action });
+    } catch (err: any) {
+      console.error('[Seller] Review error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Get seller application status for a user
+  app.get('/api/seller/status/:userId', async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ success: false, error: 'userId required' });
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const rows = await sql`SELECT * FROM seller_applications WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT 1`;
+        if (rows.length === 0) {
+          return res.json({ success: true, hasApplied: false });
+        }
+        const r = rows[0];
+        return res.json({
+          success: true,
+          hasApplied: true,
+          status: r.status,
+          adminNotes: r.admin_notes,
+          reviewedAt: r.reviewed_at,
+          createdAt: r.created_at,
+        });
+      }
+
+      return res.json({ success: true, hasApplied: false });
+    } catch (err: any) {
+      console.error('[Seller] Status error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({

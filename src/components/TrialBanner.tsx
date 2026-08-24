@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -10,9 +10,11 @@ import {
   ShieldCheck,
   Sparkles,
   Zap,
+  Gift,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { calculateTrialStatus } from '../utils/trialHelper';
+import { SellerApplicationModal } from './SellerApplicationModal';
 
 export const TrialBanner: React.FC = () => {
   const { currentUser, setIsContactDevModalOpen, setIsCryptoPaymentModalOpen, setActiveView } = useApp();
@@ -20,6 +22,7 @@ export const TrialBanner: React.FC = () => {
   if (!currentUser) return null;
 
   const trialInfo = calculateTrialStatus(currentUser);
+  const [isSellerModalOpen, setIsSellerModalOpen] = useState(false);
 
   // If user is Admin / Developer
   if (currentUser.role === 'admin') {
@@ -216,6 +219,19 @@ export const TrialBanner: React.FC = () => {
             <Crown className="h-3.5 w-3.5 text-amber-300" />
             <span>Upgrade ke Lifetime</span>
           </button>
+
+          {/* Menjadi Seller Button — only for non-admin, non-lifetime users */}
+          {!trialInfo.isLifetime && (
+            <button
+              onClick={() => setIsSellerModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 shadow-xs hover:bg-amber-100 transition dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
+            >
+              <Gift className="h-3.5 w-3.5" />
+              <span>Mau Menjadi Seller?</span>
+            </button>
+          )}
+
+          <SellerApplicationModal isOpen={isSellerModalOpen} onClose={() => setIsSellerModalOpen(false)} />
         </div>
       </div>
     </div>

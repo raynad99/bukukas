@@ -43,6 +43,7 @@ import { useApp } from '../context/AppContext';
 import { BusinessInboxMessage, SubscriptionPlan, UserProfile, UserRole } from '../types';
 import { calculateTrialStatus } from '../utils/trialHelper';
 import ReferralDashboard from "./ReferralDashboard";
+import SellerApplicationsTab from "./SellerApplicationsTab";
 
 export const DevPortalView: React.FC = () => {
   const {
@@ -67,7 +68,7 @@ export const DevPortalView: React.FC = () => {
     verifyCryptoPaymentByDev,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'crypto' | 'mailbox' | 'referral'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'crypto' | 'mailbox' | 'referral' | 'sellers'>('overview');
   const [systemHealth, setSystemHealth] = useState<any>(null);
   const [isHealthLoading, setIsHealthLoading] = useState(false);
   const [userFilter, setUserFilter] = useState<'all' | 'trial' | 'expired' | 'lifetime' | 'paid' | 'self'>('all');
@@ -395,6 +396,17 @@ export const DevPortalView: React.FC = () => {
           </button>
         </div>
       </div>
+          <button
+            onClick={() => setActiveTab('sellers')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+              activeTab === 'sellers'
+                ? 'bg-white text-slate-900 shadow-md'
+                : 'text-slate-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Users className="h-4 w-4 text-emerald-400" />
+            <span>Pengajuan Seller</span>
+          </button>
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
@@ -1299,6 +1311,11 @@ export const DevPortalView: React.FC = () => {
         <div className="space-y-4">
           <ReferralDashboard />
         </div>
+      )}
+
+      {/* TAB 6: SELLER APPLICATIONS */}
+      {activeTab === 'sellers' && (
+        <SellerApplicationsTab />
       )}
 
       {/* Modal: Tambah Akun Lifetime Baru */}

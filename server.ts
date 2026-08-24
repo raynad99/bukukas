@@ -921,7 +921,7 @@ async function startServer() {
       // Filter out test accounts (stress test, isolation test, etc.)
       const filtered = incoming.filter((raw: any) => {
         const email = String(raw?.email || '').toLowerCase();
-        if (email.includes('@test.dev') || email.includes('stress-user') || email.includes('tes-isolasi') || email.includes('tes@') || email.includes('persist-') || email.includes('e2e-test') || email.includes('neon-test') || email.includes('test-sync')) {
+        if (email.includes('@test.dev') || email.includes('@backtest.dev') || email.includes('stress-user') || email.includes('tes-isolasi') || email.includes('tes@') || email.includes('persist-') || email.includes('e2e-test') || email.includes('neon-test') || email.includes('test-sync')) {
           return false; // Reject test accounts
         }
         return true;

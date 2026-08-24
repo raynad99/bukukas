@@ -76,9 +76,14 @@ async function createTablesIfNotExist() {
         trial_expires_date TEXT,
         paid_expires_date TEXT,
         custom_notes TEXT,
+        referred_by TEXT,
         synced_at TEXT NOT NULL
       )
     `;
+    try {
+      await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS referred_by TEXT`;
+    } catch (e) {
+    }
     await sql`
       CREATE TABLE IF NOT EXISTS server_messages (
         id TEXT PRIMARY KEY,
@@ -111,7 +116,50 @@ async function createTablesIfNotExist() {
         synced_at TEXT NOT NULL DEFAULT NOW()::TEXT
       )
     `;
-    console.log("[DB] Tables created/verified: server_accounts, server_messages, verification_tokens, user_financial_data");
+    await sql`
+      CREATE TABLE IF NOT EXISTS referral_codes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL DEFAULT NOW()::TEXT,
+        is_active BOOLEAN DEFAULT true
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS referrals (
+        id TEXT PRIMARY KEY,
+        referrer_user_id TEXT NOT NULL,
+        referrer_email TEXT NOT NULL,
+        referred_email TEXT NOT NULL,
+        referred_user_id TEXT,
+        referred_name TEXT,
+        status TEXT DEFAULT 'pending',
+        reward_amount NUMERIC DEFAULT 30000,
+        reward_paid BOOLEAN DEFAULT false,
+        referred_plan TEXT,
+        referred_paid_at TEXT,
+        created_at TEXT NOT NULL DEFAULT NOW()::TEXT
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS seller_applications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_email TEXT NOT NULL,
+        user_name TEXT NOT NULL,
+        upline_user_id TEXT,
+        upline_email TEXT,
+        upline_name TEXT,
+        status TEXT DEFAULT 'pending',
+        reason TEXT,
+        admin_notes TEXT,
+        reviewed_at TEXT,
+        reviewed_by TEXT,
+        created_at TEXT NOT NULL DEFAULT NOW()::TEXT
+      )
+    `;
+    console.log("[DB] Tables created/verified: server_accounts, server_messages, verification_tokens, user_financial_data, referral_codes, referrals, seller_applications");
   } catch (err) {
     console.warn("[DB] Table creation error:", err);
   }
@@ -464,6 +512,267 @@ async function startServer() {
       res.status(500).json({ error: err.message });
     }
   });
+  app.post("/api/referral/generate", async (req, res) => {
+    try {
+      const { userId, email } = req.body;
+      if (!userId || !email) {
+        return res.status(400).json({ success: false, error: "userId and email required" });
+      }
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const existing = await sql2`SELECT code FROM referral_codes WHERE user_id = ${userId} AND is_active = true LIMIT 1`;
+        if (existing.length > 0) {
+          return res.json({ success: true, code: existing[0].code, isNew: false });
+        }
+        const code2 = "BK" + Math.random().toString(36).slice(2, 10).toUpperCase();
+        const id = `ref-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
+        await sql2`
+          INSERT INTO referral_codes (id, user_id, email, code, created_at, is_active)
+          VALUES (${id}, ${userId}, ${email.toLowerCase()}, ${code2}, ${(/* @__PURE__ */ new Date()).toISOString()}, true)
+        `;
+        console.log(`[Referral] Generated code ${code2} for ${email}`);
+        return res.json({ success: true, code: code2, isNew: true });
+      }
+      const code = "BK" + Math.random().toString(36).slice(2, 10).toUpperCase();
+      return res.json({ success: true, code, isNew: true });
+    } catch (err) {
+      console.error("[Referral] Generate error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app.get("/api/referral/stats/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ success: false, error: "userId required" });
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const referrals = await sql2`SELECT * FROM referrals WHERE referrer_user_id = ${userId} ORDER BY created_at DESC`;
+        const codeRow = await sql2`SELECT code FROM referral_codes WHERE user_id = ${userId} AND is_active = true LIMIT 1`;
+        const totalReward = await sql2`SELECT COALESCE(SUM(reward_amount), 0)::int as total FROM referrals WHERE referrer_user_id = ${userId} AND reward_paid = true`;
+        const pendingReward = await sql2`SELECT COALESCE(SUM(reward_amount), 0)::int as total FROM referrals WHERE referrer_user_id = ${userId} AND reward_paid = false AND status = 'converted'`;
+        return res.json({
+          success: true,
+          code: codeRow[0]?.code || null,
+          totalReferrals: referrals.length,
+          convertedReferrals: referrals.filter((r) => r.status === "converted").length,
+          totalRewardEarned: totalReward[0]?.total ?? 0,
+          pendingReward: pendingReward[0]?.total ?? 0,
+          referrals: referrals.map((r) => ({
+            id: r.id,
+            referredEmail: r.referred_email,
+            referredName: r.referred_name,
+            status: r.status,
+            rewardAmount: r.reward_amount,
+            rewardPaid: r.reward_paid,
+            referredPlan: r.referred_plan,
+            createdAt: r.created_at
+          }))
+        });
+      }
+      return res.json({ success: true, code: null, totalReferrals: 0, convertedReferrals: 0, totalRewardEarned: 0, pendingReward: 0, referrals: [] });
+    } catch (err) {
+      console.error("[Referral] Stats error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app.post("/api/referral/track", async (req, res) => {
+    try {
+      const { code, referredEmail, referredName, referredUserId } = req.body;
+      if (!code || !referredEmail) {
+        return res.status(400).json({ success: false, error: "code and referredEmail required" });
+      }
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const codeRow = await sql2`SELECT * FROM referral_codes WHERE code = ${code.toUpperCase()} AND is_active = true LIMIT 1`;
+        if (codeRow.length === 0) {
+          return res.status(404).json({ success: false, error: "Kode undangan tidak valid." });
+        }
+        const referrer = codeRow[0];
+        const id = `ref-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
+        const existing = await sql2`SELECT id FROM referrals WHERE referred_email = ${referredEmail.toLowerCase()} LIMIT 1`;
+        if (existing.length > 0) {
+          return res.json({ success: true, message: "Already referred" });
+        }
+        await sql2`
+          INSERT INTO referrals (id, referrer_user_id, referrer_email, referred_email, referred_user_id, referred_name, status, created_at)
+          VALUES (${id}, ${referrer.user_id}, ${referrer.email}, ${referredEmail.toLowerCase()}, ${referredUserId || null}, ${referredName || null}, 'registered', ${(/* @__PURE__ */ new Date()).toISOString()})
+        `;
+        console.log(`[Referral] ${referredEmail} registered via code ${code} from ${referrer.email}`);
+        return res.json({ success: true, referrerName: referrer.email });
+      }
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("[Referral] Track error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app.post("/api/referral/convert", async (req, res) => {
+    try {
+      const { referredEmail } = req.body;
+      if (!referredEmail) {
+        return res.status(400).json({ success: false, error: "referredEmail required" });
+      }
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        await sql2`
+          UPDATE referrals SET status = 'converted', referred_plan = 'paid', referred_paid_at = ${(/* @__PURE__ */ new Date()).toISOString()}
+          WHERE referred_email = ${referredEmail.toLowerCase()} AND status = 'registered'
+        `;
+        console.log(`[Referral] ${referredEmail} converted to paid plan`);
+        return res.json({ success: true });
+      }
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("[Referral] Convert error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app.get("/api/referral/resolve/:code", async (req, res) => {
+    try {
+      const { code } = req.params;
+      if (!code) return res.status(400).json({ success: false, error: "code required" });
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const codeRow = await sql2`SELECT * FROM referral_codes WHERE code = ${code.toUpperCase()} AND is_active = true LIMIT 1`;
+        if (codeRow.length === 0) {
+          return res.status(404).json({ success: false, error: "Kode undangan tidak valid atau sudah tidak aktif." });
+        }
+        return res.json({ success: true, referrerName: codeRow[0].email.split("@")[0], code: codeRow[0].code });
+      }
+      return res.status(404).json({ success: false, error: "Database tidak tersedia." });
+    } catch (err) {
+      console.error("[Referral] Resolve error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app.post("/api/seller/apply", async (req, res) => {
+    try {
+      const { userId, email, name, uplineUserId, uplineEmail, uplineName, reason } = req.body;
+      if (!userId || !email || !name) {
+        return res.status(400).json({ success: false, error: "userId, email, and name required" });
+      }
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const existing = await sql2`SELECT id, status FROM seller_applications WHERE user_id = ${userId} AND status IN ('pending', 'approved') LIMIT 1`;
+        if (existing.length > 0) {
+          return res.json({ success: true, status: existing[0].status, message: "Anda sudah mengajukan sebelumnya." });
+        }
+        const id = `seller-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
+        await sql2`
+          INSERT INTO seller_applications (id, user_id, user_email, user_name, upline_user_id, upline_email, upline_name, status, reason, created_at)
+          VALUES (${id}, ${userId}, ${email.toLowerCase()}, ${name}, ${uplineUserId || null}, ${uplineEmail || null}, ${uplineName || null}, 'pending', ${reason || null}, ${(/* @__PURE__ */ new Date()).toISOString()})
+        `;
+        console.log(`[Seller] Application submitted by ${email} (upline: ${uplineEmail || "none"})`);
+        return res.json({ success: true, status: "pending", message: "Pengajuan seller berhasil dikirim. Menunggu persetujuan admin." });
+      }
+      return res.json({ success: true, status: "pending", message: "Pengajuan seller berhasil (mode offline)." });
+    } catch (err) {
+      console.error("[Seller] Apply error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app.get("/api/seller/applications", async (req, res) => {
+    try {
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const rows = await sql2`SELECT * FROM seller_applications ORDER BY created_at DESC`;
+        const applications = rows.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          userEmail: r.user_email,
+          userName: r.user_name,
+          uplineUserId: r.upline_user_id,
+          uplineEmail: r.upline_email,
+          uplineName: r.upline_name,
+          status: r.status,
+          reason: r.reason,
+          adminNotes: r.admin_notes,
+          reviewedAt: r.reviewed_at,
+          reviewedBy: r.reviewed_by,
+          createdAt: r.created_at
+        }));
+        return res.json({ success: true, total: applications.length, applications });
+      }
+      return res.json({ success: true, total: 0, applications: [] });
+    } catch (err) {
+      console.error("[Seller] List error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app.post("/api/seller/review", async (req, res) => {
+    try {
+      const { applicationId, action, adminNotes, adminUserId } = req.body;
+      if (!applicationId || !action) {
+        return res.status(400).json({ success: false, error: "applicationId and action required" });
+      }
+      if (!["approved", "rejected"].includes(action)) {
+        return res.status(400).json({ success: false, error: "action must be approved or rejected" });
+      }
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const appRow = await sql2`SELECT * FROM seller_applications WHERE id = ${applicationId} LIMIT 1`;
+        if (appRow.length === 0) {
+          return res.status(404).json({ success: false, error: "Pengajuan tidak ditemukan." });
+        }
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        await sql2`
+          UPDATE seller_applications SET status = ${action}, admin_notes = ${adminNotes || null}, reviewed_at = ${now}, reviewed_by = ${adminUserId || null}
+          WHERE id = ${applicationId}
+        `;
+        if (action === "approved") {
+          const applicant = appRow[0];
+          await sql2`
+            UPDATE server_accounts SET plan = 'lifetime', status = 'active'
+            WHERE id = ${applicant.user_id}
+          `;
+          const code = "BK" + Math.random().toString(36).slice(2, 10).toUpperCase();
+          const refId = `ref-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
+          try {
+            await sql2`
+              INSERT INTO referral_codes (id, user_id, email, code, created_at, is_active)
+              VALUES (${refId}, ${applicant.user_id}, ${applicant.user_email}, ${code}, ${now}, true)
+              ON CONFLICT (id) DO NOTHING
+            `;
+          } catch (e) {
+          }
+          console.log(`[Seller] ${applicant.user_email} approved \u2192 lifetime + referral code ${code}`);
+          return res.json({ success: true, action, referralCode: code, message: `${applicant.user_name} berhasil di-upgrade ke Lifetime VIP + mendapat kode referral.` });
+        }
+        console.log(`[Seller] Application ${applicationId} ${action}`);
+        return res.json({ success: true, action, message: `Pengajuan ${action === "approved" ? "disetujui" : "ditolak"}.` });
+      }
+      return res.json({ success: true, action });
+    } catch (err) {
+      console.error("[Seller] Review error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app.get("/api/seller/status/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ success: false, error: "userId required" });
+      if (isDbAvailable()) {
+        const sql2 = getSql();
+        const rows = await sql2`SELECT * FROM seller_applications WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT 1`;
+        if (rows.length === 0) {
+          return res.json({ success: true, hasApplied: false });
+        }
+        const r = rows[0];
+        return res.json({
+          success: true,
+          hasApplied: true,
+          status: r.status,
+          adminNotes: r.admin_notes,
+          reviewedAt: r.reviewed_at,
+          createdAt: r.created_at
+        });
+      }
+      return res.json({ success: true, hasApplied: false });
+    } catch (err) {
+      console.error("[Seller] Status error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
   app.get("/api/health", (req, res) => {
     res.json({
       status: "ok",
@@ -497,6 +806,7 @@ async function startServer() {
           trialExpiresDate: r.trial_expires_date,
           paidExpiresDate: r.paid_expires_date,
           customNotes: r.custom_notes,
+          referredBy: r.referred_by,
           syncedAt: r.synced_at
         }));
         return res.json({ success: true, total: accounts2.length, accounts: accounts2 });
@@ -589,9 +899,9 @@ async function startServer() {
           const email = String(raw.email).toLowerCase();
           const customNotes = typeof raw.customNotes === "string" && !raw.customNotes.toLowerCase().includes("password") ? String(raw.customNotes) : void 0;
           await sql2`
-            INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, trial_expires_date, paid_expires_date, custom_notes, synced_at)
-            VALUES (${String(raw.id)}, ${String(raw.name || email.split("@")[0])}, ${email}, ${raw.photoUrl ? String(raw.photoUrl) : null}, ${String(raw.provider || "password")}, ${String(raw.role || "user")}, ${String(raw.plan || "trial")}, ${raw.status ? String(raw.status) : null}, ${Boolean(raw.registeredSelf)}, ${String(raw.createdAt || now)}, ${String(raw.lastLoginAt || "-")}, ${raw.trialExpiresDate ? String(raw.trialExpiresDate) : null}, ${raw.paidExpiresDate ? String(raw.paidExpiresDate) : null}, ${customNotes || null}, ${now})
-            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, photo_url = EXCLUDED.photo_url, provider = EXCLUDED.provider, role = EXCLUDED.role, plan = EXCLUDED.plan, status = EXCLUDED.status, registered_self = EXCLUDED.registered_self, created_at = EXCLUDED.created_at, last_login_at = EXCLUDED.last_login_at, trial_expires_date = EXCLUDED.trial_expires_date, paid_expires_date = EXCLUDED.paid_expires_date, custom_notes = EXCLUDED.custom_notes, synced_at = EXCLUDED.synced_at
+            INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, trial_expires_date, paid_expires_date, custom_notes, referred_by, synced_at)
+            VALUES (${String(raw.id)}, ${String(raw.name || email.split("@")[0])}, ${email}, ${raw.photoUrl ? String(raw.photoUrl) : null}, ${String(raw.provider || "password")}, ${String(raw.role || "user")}, ${String(raw.plan || "trial")}, ${raw.status ? String(raw.status) : null}, ${Boolean(raw.registeredSelf)}, ${String(raw.createdAt || now)}, ${String(raw.lastLoginAt || "-")}, ${raw.trialExpiresDate ? String(raw.trialExpiresDate) : null}, ${raw.paidExpiresDate ? String(raw.paidExpiresDate) : null}, ${customNotes || null}, ${raw.referredBy ? String(raw.referredBy) : null}, ${now})
+            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, photo_url = EXCLUDED.photo_url, provider = EXCLUDED.provider, role = EXCLUDED.role, plan = EXCLUDED.plan, status = EXCLUDED.status, registered_self = EXCLUDED.registered_self, created_at = EXCLUDED.created_at, last_login_at = EXCLUDED.last_login_at, trial_expires_date = EXCLUDED.trial_expires_date, paid_expires_date = EXCLUDED.paid_expires_date, custom_notes = EXCLUDED.custom_notes, referred_by = COALESCE(EXCLUDED.referred_by, server_accounts.referred_by), synced_at = EXCLUDED.synced_at
           `;
           upserted += 1;
         }

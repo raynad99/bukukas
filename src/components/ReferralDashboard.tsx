@@ -51,6 +51,13 @@ export default function ReferralDashboard() {
     fetchStats();
   }, [fetchStats]);
 
+  // Auto-generate referral code for lifetime users who don't have one
+  useEffect(() => {
+    if (!loading && currentUser && !stats?.code && currentUser.plan === 'lifetime') {
+      handleGenerateLink();
+    }
+  }, [loading, currentUser, stats?.code]);
+
   const handleGenerateLink = async () => {
     if (!currentUser) return;
     setGenerating(true);

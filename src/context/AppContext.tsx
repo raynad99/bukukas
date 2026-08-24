@@ -1300,6 +1300,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `Akun ${selectedPlan.toUpperCase()} Berhasil Ditambahkan 👑`,
       `Akun ${userData.name} (${userData.email}) siap digunakan dengan kata sandi: ${cleanPass}`
     );
+
+    // Auto-generate referral code for lifetime accounts
+    if (selectedPlan === 'lifetime') {
+      fetch('/api/referral/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: newVipUser.id, email: userData.email }),
+      }).then(r => r.json()).then(data => {
+        if (data.success && data.isNew) {
+          addNotification('info', 'Kode Referral Di-generate 🔗', `Kode referral ${data.code} siap digunakan.`);
+        }
+      }).catch(() => {});
+    }
   };
 
   const updateAccountByDev = (userId: string, data: Partial<UserProfile>) => {

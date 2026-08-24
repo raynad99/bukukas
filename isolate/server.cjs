@@ -882,7 +882,7 @@ async function startServer() {
       }
       const filtered = incoming.filter((raw) => {
         const email = String(raw?.email || "").toLowerCase();
-        if (email.includes("@test.dev") || email.includes("stress-user") || email.includes("tes-isolasi") || email.includes("tes@") || email.includes("persist-") || email.includes("e2e-test") || email.includes("neon-test") || email.includes("test-sync")) {
+        if (email.includes("@test.dev") || email.includes("@backtest.dev") || email.includes("stress-user") || email.includes("tes-isolasi") || email.includes("tes@") || email.includes("persist-") || email.includes("e2e-test") || email.includes("neon-test") || email.includes("test-sync")) {
           return false;
         }
         return true;

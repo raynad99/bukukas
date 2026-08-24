@@ -33,7 +33,7 @@ export interface Category {
   type: 'income' | 'expense';
   icon: string;
   color: string;
-  budgetLimit?: number; // Monthly budget limit
+  budgetLimit?: number;
 }
 
 export type SubscriptionPlan = 'trial' | 'paid' | 'lifetime';
@@ -47,12 +47,12 @@ export interface UserProfile {
   photoUrl?: string;
   provider: 'gmail' | 'password' | 'demo';
   isVerified: boolean;
-  role: UserRole; // 'admin' for Dev / Superadmin, 'user' for regular users
-  plan: SubscriptionPlan; // 'trial' (7 days), 'paid' (yearly / 1 year), 'lifetime' (unlimited access)
-  trialStartDate?: string; // ISO date string
-  trialExpiresDate?: string; // ISO date string (+7 days)
-  paidExpiresDate?: string; // ISO date string (+1 year / 365 days)
-  registeredSelf: boolean; // true if self-registered by user, false if created by Dev
+  role: UserRole;
+  plan: SubscriptionPlan;
+  trialStartDate?: string;
+  trialExpiresDate?: string;
+  paidExpiresDate?: string;
+  registeredSelf: boolean;
   status?: 'active' | 'trial' | 'expired' | 'suspended';
   customNotes?: string;
   createdAt: string;
@@ -78,26 +78,23 @@ export interface BusinessInboxMessage {
 export interface BankAccount {
   id: string;
   name: string;
-  bankName: string;
-  accountNumber: string;
   type: 'bank' | 'ewallet' | 'credit' | 'cash';
   balance: number;
   currency: Currency;
   color: string;
   icon: string;
-  isConnected?: boolean;
 }
 
 export interface Transaction {
   id: string;
   title: string;
   amount: number;
-  currency?: Currency; // Multi-currency per transaction (e.g. NZD, IDR, USD)
+  currency?: Currency;
   type: TransactionType;
   categoryId: string;
   accountId: string;
-  toAccountId?: string; // For transfers
-  date: string; // YYYY-MM-DD
+  toAccountId?: string;
+  date: string;
   time?: string;
   notes?: string;
   receiptUrl?: string;
@@ -109,8 +106,8 @@ export interface BillReminder {
   id: string;
   title: string;
   amount: number;
-  currency?: Currency; // Multi-currency per bill
-  dueDate: string; // YYYY-MM-DD
+  currency?: Currency;
+  dueDate: string;
   categoryId: string;
   accountId?: string;
   recurrence: 'once' | 'monthly' | 'weekly' | 'yearly';
@@ -141,7 +138,7 @@ export interface SecuritySettings {
   is2FAEnabled: boolean;
   twoFactorSecret?: string;
   isBiometricEnabled: boolean;
-  autoLockMinutes: number; // 0 for never
+  autoLockMinutes: number;
   lastActiveTimestamp: number;
 }
 
@@ -174,14 +171,14 @@ export interface CryptoPaymentRecord {
   notes?: string;
 }
 
-export type LoanType = 'payable' | 'receivable'; // 'payable' = Hutang (Kewajiban), 'receivable' = Piutang (Aset / Hak Tagih)
+export type LoanType = 'payable' | 'receivable';
 export type LoanStatus = 'unpaid' | 'partial' | 'paid';
 
 export interface LoanPayment {
   id: string;
   loanId: string;
   amount: number;
-  paymentDate: string; // YYYY-MM-DD
+  paymentDate: string;
   accountId?: string;
   accountName?: string;
   notes?: string;
@@ -190,22 +187,21 @@ export interface LoanPayment {
 
 export interface Loan {
   id: string;
-  type: LoanType; // 'payable' = Hutang, 'receivable' = Piutang
-  personName: string; // Nama Peminjam (Debitur) / Pemberi Pinjaman (Kreditor)
-  contactPhone?: string; // Nomor Kontak / WhatsApp
-  title: string; // Keterangan / Keperluan Pinjaman
-  amount: number; // Total Nominal Pinjaman Pokok
+  type: LoanType;
+  personName: string;
+  contactPhone?: string;
+  title: string;
+  amount: number;
   currency?: Currency;
-  startDate: string; // YYYY-MM-DD
-  dueDate: string; // Tanggal Jatuh Tempo (YYYY-MM-DD)
-  paidAmount: number; // Total yang sudah dicicil/dilunasi
-  remainingAmount: number; // Sisa saldo (amount - paidAmount)
-  status: LoanStatus; // 'unpaid' | 'partial' | 'paid'
-  accountId?: string; // Rekening kas/bank pencairan/pengeluaran default
+  startDate: string;
+  dueDate: string;
+  paidAmount: number;
+  remainingAmount: number;
+  status: LoanStatus;
+  accountId?: string;
   reminderDaysBefore?: number;
   notes?: string;
-  payments: LoanPayment[]; // Riwayat pembayaran cicilan / pelunasan
+  payments: LoanPayment[];
   createdAt: number;
-  settledAt?: string; // Tanggal pelunasan penuh jika sudah lunas
+  settledAt?: string;
 }
-

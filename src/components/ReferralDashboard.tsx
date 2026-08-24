@@ -54,9 +54,25 @@ export default function ReferralDashboard() {
   // Auto-generate referral code for lifetime users who don't have one
   useEffect(() => {
     if (!loading && currentUser && !stats?.code && currentUser.plan === 'lifetime') {
-      handleGenerateLink();
+      (async () => {
+        try {
+          const res = await fetch('/api/referral/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id, email: currentUser.email }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            const baseUrl = window.location.origin;
+            setInviteLink(`${baseUrl}/auth?ref=${data.code}`);
+            await fetchStats();
+          }
+        } catch (err) {
+          console.error('Failed to auto-generate referral link:', err);
+        }
+      })();
     }
-  }, [loading, currentUser, stats?.code]);
+  }, [loading, currentUser, stats?.code, fetchStats]);
 
   const handleGenerateLink = async () => {
     if (!currentUser) return;

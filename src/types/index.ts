@@ -55,6 +55,7 @@ export interface UserProfile {
   registeredSelf: boolean;
   status?: 'active' | 'trial' | 'expired' | 'suspended';
   customNotes?: string;
+  referredBy?: string;
   createdAt: string;
   lastLoginAt: string;
 }

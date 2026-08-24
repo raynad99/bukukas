@@ -83,6 +83,8 @@ export const AuthView: React.FC = () => {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [copiedResetLink, setCopiedResetLink] = useState(false);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralName, setReferralName] = useState<string | null>(null);
 
   // Dev portal secure login state
   const [isDevLoginOpen, setIsDevLoginOpen] = useState(false);
@@ -124,6 +126,19 @@ export const AuthView: React.FC = () => {
           setForgotStep('verify');
           setIsForgotPasswordOpen(true);
         }
+      // Read referral code from URL
+      const refCode = params.get('ref');
+      if (refCode) {
+        setReferralCode(refCode);
+        setMode('register'); // Auto-switch to register mode
+        // Resolve referrer name
+        fetch(`/api/referral/resolve/${refCode}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) setReferralName(data.referrerName);
+          })
+          .catch(() => {});
+      }
       }
     }
   }, []);
@@ -275,6 +290,25 @@ export const AuthView: React.FC = () => {
   const [emailSentTo, setEmailSentTo] = useState('');
   const [verificationLoading, setVerificationLoading] = useState(false);
 
+
+  // Track referral if code exists in URL
+  const trackReferral = async (userEmail: string, userName: string) => {
+    if (!referralCode) return;
+    try {
+      await fetch('/api/referral/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: referralCode,
+          referredEmail: userEmail,
+          referredName: userName,
+        }),
+      });
+    } catch (err) {
+      console.warn('Failed to track referral:', err);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -315,9 +349,11 @@ export const AuthView: React.FC = () => {
           if (data.alreadyVerified) {
             // Email already verified, just register
             await registerWithEmail(name.trim(), email.trim(), password);
+            if (referralCode) trackReferral(email.trim(), name.trim());
           } else if (data.devMode) {
             // Dev mode - auto verify and register
             await registerWithEmail(name.trim(), email.trim(), password);
+            if (referralCode) trackReferral(email.trim(), name.trim());
           } else if (data.success) {
             // Show verification sent screen
             setEmailSent(true);
@@ -335,6 +371,7 @@ export const AuthView: React.FC = () => {
           // If email service fails, auto-register for dev mode
           console.warn('Email verification failed, auto-registering for dev mode');
           await registerWithEmail(name.trim(), email.trim(), password);
+            if (referralCode) trackReferral(email.trim(), name.trim());
         }
         setVerificationLoading(false);
       } else {
@@ -374,6 +411,7 @@ export const AuthView: React.FC = () => {
     setIsLoading(true);
     try {
       await registerWithEmail(name.trim(), emailSentTo, password);
+      if (referralCode) trackReferral(emailSentTo, name.trim());
     } catch (err: any) {
       setErrorMessage(err?.message || 'Gagal mendaftarkan akun.');
     } finally {
@@ -974,6 +1012,19 @@ export const AuthView: React.FC = () => {
                   </p>
                   <p className="mt-1 text-[11px] text-indigo-800 dark:text-indigo-300">
                     Setiap pendaftaran mandiri langsung aktif dengan masa uji coba 7 hari dan otomatis tercatat di sistem pembukuan aman.
+                  </p>
+                </div>
+              )}
+
+              {/* Referral Invitation Banner */}
+              {mode === 'register' && referralCode && referralName && (
+                <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-xs text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <span className="text-base">🔗</span>
+                    <span>Anda diundang oleh <strong>{referralName}</strong></span>
+                  </p>
+                  <p className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-300">
+                    Daftar sekarang untuk mendapatkan akses Trial 7 Hari gratis!
                   </p>
                 </div>
               )}

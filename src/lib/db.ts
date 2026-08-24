@@ -58,9 +58,15 @@ export async function createTablesIfNotExist(): Promise<void> {
         trial_expires_date TEXT,
         paid_expires_date TEXT,
         custom_notes TEXT,
+        referred_by TEXT,
         synced_at TEXT NOT NULL
       )
     `;
+
+    // Add referred_by column if it doesn't exist (migration)
+    try {
+      await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS referred_by TEXT`;
+    } catch (e) { /* column already exists */ }
 
     await sql`
       CREATE TABLE IF NOT EXISTS server_messages (

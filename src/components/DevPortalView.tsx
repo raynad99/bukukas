@@ -663,6 +663,11 @@ export const DevPortalView: React.FC = () => {
                             >
                               {user.registeredSelf ? '🌐 Register Mandiri' : '👑 Dibuat Dev'}
                             </span>
+                            {user.referredBy && (
+                              <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                🔗 Referral: {user.referredBy}
+                              </span>
+                            )}
                           </div>
 
                           <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">{user.email}</p>

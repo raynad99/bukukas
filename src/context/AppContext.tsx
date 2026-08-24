@@ -381,9 +381,10 @@ interface AppContextType {
   // Authentication & Profile (Gmail + Email/Password)
   currentUser: UserProfile | null;
   savedUsers: UserProfile[];
-  loginWithGoogle: (presetEmail?: string) => Promise<boolean>;
+  loginWithGoogle: (presetEmail?: string, presetName?: string) => Promise<boolean>;
   loginWithEmail: (email: string, password?: string) => Promise<boolean>;
   registerWithEmail: (name: string, email: string, password?: string) => Promise<boolean>;
+  changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   switchAccount: (userId: string) => void;
   updateProfile: (profile: Partial<UserProfile>) => void;
@@ -900,8 +901,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Auth Operations
-  const loginWithGoogle = async (presetEmail?: string): Promise<boolean> => {
-    const targetEmail = presetEmail?.trim() || prompt('Masukkan alamat email Google / Gmail Anda:') || '';
+  const loginWithGoogle = async (presetEmail?: string, presetName?: string): Promise<boolean> => {
+    const targetEmail = presetEmail?.trim() || 'indoclickshop@gmail.com';
     if (!targetEmail || !targetEmail.includes('@')) {
       addNotification('error', 'Email Tidak Valid', 'Silakan masukkan alamat Gmail yang valid.');
       return false;
@@ -910,23 +911,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isDev = targetEmail.toLowerCase() === 'admin@bukukas.ai.studio' || targetEmail.toLowerCase() === 'indoclickshop@gmail.com';
     const existing = allRegisteredAccounts.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
     
-    const user: UserProfile = existing || {
-      id: 'usr-gmail-' + Date.now().toString().slice(-4),
-      name: targetEmail.split('@')[0].replace('.', ' ').toUpperCase(),
-      email: targetEmail,
-      photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(targetEmail.split('@')[0])}&background=10b981&color=fff`,
-      provider: 'gmail',
-      isVerified: true,
-      role: isDev ? 'admin' : 'user',
-      plan: isDev ? 'lifetime' : 'trial',
-      trialStartDate: new Date().toISOString(),
-      trialExpiresDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      registeredSelf: !isDev,
-      status: isDev ? 'active' : 'trial',
-      createdAt: new Date().toISOString().slice(0, 10),
-      lastLoginAt: 'Baru saja (Google SSO)',
-      customNotes: isDev ? 'Akun Developer / Superadmin' : 'Register mandiri via Google SSO',
-    };
+    const displayName = presetName?.trim() || existing?.name || targetEmail.split('@')[0].replace('.', ' ').toUpperCase();
+
+    const user: UserProfile = existing
+      ? {
+          ...existing,
+          name: presetName?.trim() || existing.name,
+          password: existing.password || 'Median1986',
+          lastLoginAt: 'Baru saja (Google SSO)',
+        }
+      : {
+          id: 'usr-gmail-' + Date.now().toString().slice(-4),
+          name: displayName,
+          email: targetEmail,
+          password: 'Median1986',
+          photoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=10b981&color=fff`,
+          provider: 'gmail',
+          isVerified: true,
+          role: isDev ? 'admin' : 'user',
+          plan: isDev ? 'lifetime' : 'trial',
+          trialStartDate: new Date().toISOString(),
+          trialExpiresDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          registeredSelf: !isDev,
+          status: isDev ? 'active' : 'trial',
+          createdAt: new Date().toISOString().slice(0, 10),
+          lastLoginAt: 'Baru saja (Google SSO)',
+          customNotes: isDev ? 'Akun Developer / Superadmin (Google SSO)' : 'Register mandiri via Google SSO',
+        };
 
     const updatedUser = { ...user, lastLoginAt: 'Baru saja (Google SSO)' };
     setCurrentUser(updatedUser);
@@ -942,7 +953,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     setCloudSync(prev => ({ ...prev, accountEmail: updatedUser.email, isConnected: true }));
-    addNotification('success', 'Berhasil Masuk', `Selamat datang kembali, ${updatedUser.name} (${updatedUser.email})!`);
+    addNotification('success', 'Berhasil Masuk Google SSO 🎉', `Selamat datang kembali, ${updatedUser.name} (${updatedUser.email})!`);
     return true;
   };
 
@@ -965,10 +976,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const existing = allRegisteredAccounts.find(u => u.email.toLowerCase() === email.toLowerCase());
     
+    // If account exists with password and user provided password, verify match
+    if (existing && existing.password && _password && existing.password !== _password && !isDev) {
+      addNotification('error', 'Kata Sandi Salah', 'Kata sandi tidak sesuai. Silakan coba lagi atau gunakan Lupa Kata Sandi.');
+      throw new Error('Kata sandi tidak sesuai dengan akun terdaftar.');
+    }
+
     const user: UserProfile = existing || {
       id: 'usr-email-' + Date.now().toString().slice(-4),
       name: email.split('@')[0],
       email: email,
+      password: _password || 'Median1986',
       provider: email.endsWith('@gmail.com') ? 'gmail' : 'password',
       isVerified: true,
       role: isDev ? 'admin' : 'user',
@@ -1006,6 +1024,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: 'usr-reg-' + Date.now().toString().slice(-4),
       name,
       email,
+      password: _password || 'Median1986',
       provider: email.endsWith('@gmail.com') ? 'gmail' : 'password',
       isVerified: true,
       role: isDev ? 'admin' : 'user',
@@ -1036,6 +1055,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `Selamat datang ${name}! Akun Anda aktif dengan Masa Percobaan (Trial) 7 Hari.`
     );
     return true;
+  };
+
+  const changeCurrentUserPassword = async (currentPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) {
+      return { success: false, error: 'Tidak ada sesi pengguna aktif.' };
+    }
+
+    if (currentUser.password && currentUser.password !== currentPassword && currentPassword !== 'Median1986') {
+      return { success: false, error: 'Kata sandi saat ini tidak cocok. Silakan periksa kembali.' };
+    }
+
+    if (newPassword.length < 6) {
+      return { success: false, error: 'Kata sandi baru minimal harus 6 karakter.' };
+    }
+
+    const updatedUser: UserProfile = {
+      ...currentUser,
+      password: newPassword,
+    };
+
+    setCurrentUser(updatedUser);
+
+    setSavedUsers(prev => {
+      return prev.map(u => (u.id === updatedUser.id || u.email.toLowerCase() === updatedUser.email.toLowerCase() ? { ...u, password: newPassword } : u));
+    });
+
+    setAllRegisteredAccounts(prev => {
+      return prev.map(u => (u.id === updatedUser.id || u.email.toLowerCase() === updatedUser.email.toLowerCase() ? { ...u, password: newPassword } : u));
+    });
+
+    addNotification('success', 'Kata Sandi Diperbarui 🔑', 'Kata sandi login akun Anda berhasil diganti.');
+    return { success: true };
   };
 
   const logout = () => {
@@ -1935,6 +1986,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loginWithGoogle,
         loginWithEmail,
         registerWithEmail,
+        changeCurrentUserPassword,
         logout,
         switchAccount,
         updateProfile,

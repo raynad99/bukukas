@@ -27,8 +27,9 @@ import { generateTOTPCode } from '../utils/crypto';
 export const SecurityView: React.FC = () => {
   const {
     t,
+    currentUser,
+    changeCurrentUserPassword,
     security,
-    setMasterPassphrase,
     toggle2FA,
     cloudSync,
     setCloudProvider,
@@ -48,12 +49,15 @@ export const SecurityView: React.FC = () => {
     setTimeout(() => setCopiedDevEmail(false), 2000);
   };
 
-  // Encryption master key change states
+  // Change account password states
   const [currentPass, setCurrentPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
-  const [showPass, setShowPass] = useState(false);
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
   const [passError, setPassError] = useState('');
+  const [passSuccess, setPassSuccess] = useState('');
+  const [isSavingPass, setIsSavingPass] = useState(false);
 
   // 2FA TOTP live code simulator
   const [currentTOTP, setCurrentTOTP] = useState('');
@@ -81,27 +85,36 @@ export const SecurityView: React.FC = () => {
     return () => clearInterval(interval);
   }, [security.isTwoFactorEnabled, security.totpSecret]);
 
-  const handleUpdatePassphrase = async (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPassError('');
+    setPassSuccess('');
 
     if (newPass.length < 6) {
-      setPassError('Kata sandi master minimal 6 karakter!');
+      setPassError('Kata sandi baru minimal harus 6 karakter.');
       return;
     }
     if (newPass !== confirmPass) {
-      setPassError('Konfirmasi kata sandi tidak cocok!');
+      setPassError('Konfirmasi kata sandi baru tidak cocok.');
       return;
     }
 
+    setIsSavingPass(true);
     try {
-      await setMasterPassphrase(newPass);
-      setCurrentPass('');
-      setNewPass('');
-      setConfirmPass('');
-      addNotification('success', 'Enkripsi Diperbarui', 'Kunci enkripsi master AES-256 berhasil diperbarui.');
-    } catch (err) {
-      setPassError('Gagal memperbarui kata sandi.');
+      const result = await changeCurrentUserPassword(currentPass, newPass);
+      if (result.success) {
+        setCurrentPass('');
+        setNewPass('');
+        setConfirmPass('');
+        setPassSuccess('Kata sandi akun Anda berhasil diperbarui!');
+        setTimeout(() => setPassSuccess(''), 4000);
+      } else {
+        setPassError(result.error || 'Gagal memperbarui kata sandi.');
+      }
+    } catch (err: any) {
+      setPassError(err?.message || 'Terjadi kesalahan saat mengganti kata sandi.');
+    } finally {
+      setIsSavingPass(false);
     }
   };
 
@@ -142,7 +155,7 @@ export const SecurityView: React.FC = () => {
               {t('security_title')} & {t('cloud_sync_title')}
             </h2>
             <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-              <ShieldCheck className="h-3.5 w-3.5" /> AES-256 + 2FA
+              <ShieldCheck className="h-3.5 w-3.5" /> Proteksi Akun + 2FA
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -159,9 +172,9 @@ export const SecurityView: React.FC = () => {
         </button>
       </div>
 
-      {/* Grid: E2E Encryption & 2FA */}
+      {/* Grid: Change Password & 2FA */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Card 1: End-to-End Encryption */}
+        {/* Card 1: Change Account Password */}
         <div className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div>
             <div className="flex items-center justify-between">
@@ -171,79 +184,120 @@ export const SecurityView: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                    {t('e2e_encryption_title')}
+                    {t('change_password_title')}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Standar Militer AES-GCM 256-bit + PBKDF2 (100,000 iterasi)
+                    {t('change_password_desc')}
                   </p>
                 </div>
               </div>
 
               <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                {t('encryption_status_active')}
+                <ShieldCheck className="h-3 w-3" /> Akun Terproteksi
               </span>
             </div>
 
-            <div className="mt-4 rounded-xl bg-slate-50 p-3.5 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-              <p>
-                Semua data transaksi, rekening perbankan, dan pengingat tagihan Anda dienkripsi secara lokal sebelum disimpan di memori dan saat disinkronisasi ke penyimpanan awan.
-              </p>
+            {/* Current user account info banner */}
+            <div className="mt-4 rounded-xl border border-slate-200/80 bg-slate-50 p-3.5 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-medium text-slate-500 dark:text-slate-400">Akun Aktif: </span>
+                  <strong className="font-bold text-slate-900 dark:text-white">{currentUser?.name || 'Pengguna'}</strong>
+                  <span className="text-slate-400 font-mono text-[11px] block mt-0.5">({currentUser?.email || 'email@bukukas.ai.studio'})</span>
+                </div>
+                <span className="rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                  {currentUser?.role === 'admin' ? '👑 Admin / Dev' : '👤 Pengguna'}
+                </span>
+              </div>
             </div>
 
-            {/* Set / Change Master Passphrase Form */}
-            <form onSubmit={handleUpdatePassphrase} className="mt-4 space-y-3">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                {t('change_master_password')}
-              </h4>
-
+            {/* Change Password Form */}
+            <form onSubmit={handleChangePassword} className="mt-4 space-y-3">
               {passError && (
-                <div className="rounded-lg bg-rose-50 p-2 text-xs text-rose-600 dark:bg-rose-950/50 dark:text-rose-400">
-                  {passError}
+                <div className="flex items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs font-medium text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{passError}</span>
                 </div>
               )}
 
+              {passSuccess && (
+                <div className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>{passSuccess}</span>
+                </div>
+              )}
+
+              {/* Current Password Field */}
               <div>
                 <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                  {t('new_master_password')}
+                  {t('current_password')}
                 </label>
                 <div className="relative mt-1">
                   <input
-                    type={showPass ? 'text' : 'password'}
+                    type={showCurrentPass ? 'text' : 'password'}
                     required
-                    placeholder="Minimal 6 karakter"
-                    value={newPass}
-                    onChange={e => setNewPass(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    placeholder="Masukkan kata sandi saat ini"
+                    value={currentPass}
+                    onChange={e => setCurrentPass(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPass(!showPass)}
-                    className="absolute top-2.5 right-3 text-slate-400"
+                    onClick={() => setShowCurrentPass(!showCurrentPass)}
+                    className="absolute top-2.5 right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                   >
-                    {showPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    {showCurrentPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
                 </div>
               </div>
 
+              {/* New Password Field */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                  {t('new_password')}
+                </label>
+                <div className="relative mt-1">
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    placeholder="Minimal 6 karakter"
+                    value={newPass}
+                    onChange={e => setNewPass(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPass(!showNewPass)}
+                    className="absolute top-2.5 right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    {showNewPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password Field */}
               <div>
                 <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
                   {t('confirm_new_password')}
                 </label>
                 <input
-                  type={showPass ? 'text' : 'password'}
+                  type={showNewPass ? 'text' : 'password'}
                   required
                   placeholder="Ulangi kata sandi baru"
                   value={confirmPass}
                   onChange={e => setConfirmPass(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full rounded-xl bg-slate-900 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                disabled={isSavingPass}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:bg-slate-800 disabled:opacity-50 dark:bg-emerald-600 dark:hover:bg-emerald-500"
               >
-                Simpan Kunci Enkripsi Baru
+                <KeyRound className="h-3.5 w-3.5" />
+                <span>{isSavingPass ? 'Menyimpan...' : t('save_password_change')}</span>
               </button>
             </form>
           </div>

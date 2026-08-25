@@ -777,19 +777,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // --- Server Account Registry Sync ---
-  // Public profiles only: passwords NEVER leave this browser.
-  const stripAccountSecrets = (u: UserProfile): Partial<UserProfile> => {
-    const { password, ...publicProfile } = u;
-    return publicProfile;
-  };
-
+  // Sync account data to server (includes password for cross-device login verification)
   const pushAccountsToServer = async (users: UserProfile[]) => {
     try {
       if (!users.length) return;
       await fetch('/api/accounts/upsert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accounts: users.map(stripAccountSecrets) }),
+        body: JSON.stringify({ accounts: users.map(u => ({
+          id: u.id, name: u.name, email: u.email, photoUrl: u.photoUrl,
+          provider: u.provider, role: u.role, plan: u.plan, status: u.status,
+          registeredSelf: u.registeredSelf, createdAt: u.createdAt,
+          lastLoginAt: u.lastLoginAt, trialExpiresDate: u.trialExpiresDate,
+          paidExpiresDate: u.paidExpiresDate, customNotes: u.customNotes,
+          referredBy: u.referredBy, password: u.password,
+        })) }),
       });
     } catch {
       // Offline fallback: keep working locally

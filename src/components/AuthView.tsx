@@ -126,6 +126,8 @@ export const AuthView: React.FC = () => {
           setForgotStep('verify');
           setIsForgotPasswordOpen(true);
         }
+      }
+
       // Read referral code from URL — show registration form for new account.
       const refCode = params.get('ref');
       if (refCode) {
@@ -138,7 +140,6 @@ export const AuthView: React.FC = () => {
             if (data.success) setReferralName(data.referrerName);
           })
           .catch(() => {});
-      }
       }
     }
   }, []);

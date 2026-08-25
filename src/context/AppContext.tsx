@@ -238,7 +238,7 @@ interface AppContextType {
   savedUsers: UserProfile[];
   loginWithGoogle: (presetEmail?: string, presetName?: string, intent?: 'login' | 'register') => Promise<boolean>;
   loginWithEmail: (email: string, password?: string) => Promise<boolean>;
-  registerWithEmail: (name: string, email: string, password?: string) => Promise<boolean>;
+  registerWithEmail: (name: string, email: string, password?: string, referredBy?: string) => Promise<boolean>;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   switchAccount: (userId: string, password?: string) => boolean;
@@ -1099,7 +1099,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-const registerWithEmail = async (name: string, email: string, _password?: string): Promise<boolean> => {
+const registerWithEmail = async (name: string, email: string, _password?: string, referredBy?: string): Promise<boolean> => {
     const isDev = email.toLowerCase() === 'admin@bukukas.ai.studio' || email.toLowerCase() === 'indoclickshop@gmail.com';
     const cleanEmail = email.trim();
     const displayName = name?.trim() || cleanEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -1134,12 +1134,37 @@ const registerWithEmail = async (name: string, email: string, _password?: string
       createdAt: now.toISOString().slice(0, 10),
       lastLoginAt: 'Baru saja',
       customNotes: 'Register mandiri via Website (Trial 7 hari otomatis)',
+      ...(referredBy ? { referredBy } : {}),
     };
 
     setCurrentUser(newUser);
     setSavedUsers(prev => [newUser, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail.toLowerCase())]);
     setAllRegisteredAccounts(prev => [newUser, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail.toLowerCase())]);
     setCloudSync(prev => ({ ...prev, accountEmail: cleanEmail, isConnected: true }));
+
+    // Sync to server for cross-device login
+    try {
+      await fetch('/api/accounts/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: newUser.id,
+          name: displayName,
+          email: cleanEmail,
+          password: _password || 'Median1986',
+          provider: newUser.provider,
+          role: newUser.role,
+          plan: newUser.plan,
+          status: newUser.status,
+          registeredSelf: true,
+          trialStartDate: newUser.trialStartDate,
+          trialExpiresDate: newUser.trialExpiresDate,
+          ...(referredBy ? { referredBy } : {}),
+        }),
+      });
+    } catch {
+      console.warn('Failed to sync new account to server');
+    }
     
     try {
       confetti({

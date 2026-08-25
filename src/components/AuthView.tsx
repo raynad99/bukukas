@@ -126,11 +126,11 @@ export const AuthView: React.FC = () => {
           setForgotStep('verify');
           setIsForgotPasswordOpen(true);
         }
-      // Read referral code from URL — this account was created by an upline.
+      // Read referral code from URL — show registration form for new account.
       const refCode = params.get('ref');
       if (refCode) {
         setReferralCode(refCode);
-        setMode('login'); // Stay on login — account already exists
+        setMode('register'); // Show register form — new account via referral
         // Resolve referrer name for the banner
         fetch(`/api/referral/resolve/${refCode}`)
           .then(r => r.json())
@@ -325,7 +325,35 @@ export const AuthView: React.FC = () => {
 
     setIsLoading(true);
     try {
-      await loginWithEmail(email.trim(), password);
+      if (mode === 'register') {
+        // Registration via referral link
+        if (!name.trim()) {
+          setErrorMessage('Nama lengkap wajib diisi.');
+          setIsLoading(false);
+          return;
+        }
+        // Resolve referrer email from code for referredBy field
+        let referrerEmail: string | undefined;
+        if (referralCode) {
+          try {
+            const resolveRes = await fetch(`/api/referral/resolve/${referralCode}`);
+            const resolveData = await resolveRes.json();
+            if (resolveData.success && resolveData.referrerEmail) {
+              referrerEmail = resolveData.referrerEmail;
+            }
+          } catch { /* ignore */ }
+        }
+        await registerWithEmail(name.trim(), email.trim(), password, referrerEmail);
+        // Track referral after successful registration
+        if (referralCode) {
+          await trackReferral(email.trim(), name.trim());
+        }
+        addNotification('success', 'Pendaftaran Berhasil 🎉', 'Akun Anda sudah aktif. Silakan masuk dengan email dan kata sandi yang baru dibuat.');
+        setMode('login');
+        // Pre-fill email so user can login immediately
+      } else {
+        await loginWithEmail(email.trim(), password);
+      }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Terjadi kesalahan saat memproses akun.');
     } finally {
@@ -917,20 +945,22 @@ export const AuthView: React.FC = () => {
         <div className="grid gap-6 md:grid-cols-12">
           <div className="md:col-span-7">
             <div className="rounded-3xl border border-slate-200/90 bg-white p-6 shadow-sm sm:p-8 dark:border-slate-800 dark:bg-slate-900">
-              {/* Upline Referral Banner */}
+              {/* Upline Referral Banner — Registration via Invite Link */}
               {referralName && (
                 <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-xs text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
                   <p className="font-bold flex items-center gap-1.5">
                     <Users className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>🔗 Akun dari Upline Anda</span>
+                    <span>🔗 Anda Diundang oleh {referralName}</span>
                   </p>
                   <p className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-300">
-                    Akun ini dibuat oleh <strong>{referralName}</strong>. Masukkan email & kata sandi yang diberikan oleh upline Anda.
+                    {mode === 'register'
+                      ? `Buat akun baru Anda di BukuKas Pro. Setelah mendaftar, Anda akan mendapatkan masa uji coba gratis 7 hari!`
+                      : `Masuk dengan email & kata sandi yang sudah terdaftar, atau buat akun baru.`}
                   </p>
                 </div>
               )}
 
-              {/* Restricted Registration Notice */}
+              {/* Restricted Registration Notice — No referral */}
               {!referralName && (
                 <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
                   <p className="font-bold flex items-center gap-1.5">
@@ -954,6 +984,26 @@ export const AuthView: React.FC = () => {
 
               {/* Email + Password Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
+
+                {/* Name field — only in register mode */}
+                {mode === 'register' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Nama Lengkap
+                    </label>
+                    <div className="relative">
+                      <User className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        placeholder="Nama lengkap Anda"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 py-3 pl-10 pr-4 text-sm text-slate-900 transition focus:border-emerald-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -1024,9 +1074,27 @@ export const AuthView: React.FC = () => {
                   className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3.5 text-sm font-bold text-white shadow-md shadow-emerald-600/30 transition hover:from-emerald-700 hover:to-teal-700 active:scale-[0.99] disabled:opacity-60"
                 >
                   <UserCheck className="h-4 w-4" />
-                  <span>{isLoading ? 'Memproses...' : 'Masuk ke Pembukuan'}</span>
+                  <span>{isLoading ? 'Memproses...' : mode === 'register' ? 'Buat Akun Baru' : 'Masuk ke Pembukuan'}</span>
                 </button>
               </form>
+
+              {/* Mode toggle when referral code is present */}
+              {referralCode && (
+                <div className="mt-3 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode(mode === 'register' ? 'login' : 'register');
+                      setErrorMessage(null);
+                    }}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 hover:underline"
+                  >
+                    {mode === 'register'
+                      ? 'Sudah punya akun? Masuk di sini'
+                      : 'Belum punya akun? Daftar via Undangan'}
+                  </button>
+                </div>
+              )}
 
               {/* Secure Developer Access Footer Button */}
               <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">

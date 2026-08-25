@@ -718,6 +718,42 @@ async function startServer() {
     }
   });
 
+  // Resolve referral code to referrer info (name + email) — used by AuthView invite banner
+  app.get('/api/referral/resolve/:code', async (req, res) => {
+    try {
+      const { code } = req.params;
+      if (!code) return res.status(400).json({ success: false, error: 'code required' });
+
+      const upperCode = code.toUpperCase();
+
+      if (isDbAvailable()) {
+        const sql = getSql();
+        const rows = await sql`
+          SELECT rc.user_id, rc.email, rc.code, sa.name
+          FROM referral_codes rc
+          LEFT JOIN server_accounts sa ON sa.email = rc.email
+          WHERE rc.code = ${upperCode} AND rc.is_active = true
+          LIMIT 1
+        `;
+        if (rows.length > 0) {
+          return res.json({ success: true, referrerName: rows[0].name || rows[0].email, referrerEmail: rows[0].email });
+        }
+      }
+
+      // JSON fallback — search in-memory codes
+      for (const c of inMemoryReferralCodes.values()) {
+        if (c.code === upperCode && c.isActive) {
+          return res.json({ success: true, referrerName: c.email, referrerEmail: c.email });
+        }
+      }
+
+      return res.json({ success: false, error: 'Referral code not found' });
+    } catch (err: any) {
+      console.error('[Referral] Resolve error:', err?.message);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   // Mark referral as converted (when referred user upgrades to paid plan)
   app.post('/api/referral/convert', async (req, res) => {
     try {

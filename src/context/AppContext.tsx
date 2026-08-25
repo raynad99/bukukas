@@ -1036,10 +1036,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : null;
         if (srv) {
           serverAccount = srv as UserProfile;
-          setAllRegisteredAccounts(prev => [
-            serverAccount as UserProfile,
-            ...prev.filter(u => u.email.toLowerCase() !== email.toLowerCase() && u.id !== (srv as UserProfile).id),
-          ]);
+        }
+        // Add ALL server accounts to ensure downline/referral data is always available
+        if (Array.isArray(data.accounts) && data.accounts.length > 0) {
+          setAllRegisteredAccounts(prev => {
+            const map = new Map<string, UserProfile>();
+            prev.forEach(u => map.set(u.id, u));
+            data.accounts.forEach((s: any) => {
+              const srvAcc = s as UserProfile;
+              // Skip duplicates by email
+              const existingByEmail = Array.from(map.values()).find(
+                u => u.email.toLowerCase() === srvAcc.email?.toLowerCase() && u.id !== srvAcc.id
+              );
+              if (existingByEmail) {
+                // Server account wins on plan/role (may be upgraded by admin)
+                if (srvAcc.plan === 'lifetime' || srvAcc.plan === 'paid') {
+                  map.delete(existingByEmail.id);
+                }
+              }
+              if (!map.has(srvAcc.id)) map.set(srvAcc.id, srvAcc);
+            });
+            return Array.from(map.values());
+          });
         }
       }
     } catch {
@@ -1146,7 +1164,7 @@ const registerWithEmail = async (name: string, email: string, _password?: string
 
     // Sync to server for cross-device login
     try {
-      await fetch('/api/accounts/create', {
+      const createRes = await fetch('/api/accounts/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1164,6 +1182,14 @@ const registerWithEmail = async (name: string, email: string, _password?: string
           ...(referredBy ? { referredBy } : {}),
         }),
       });
+      // Update local user ID with server-assigned ID for consistency
+      const createData = await createRes.json().catch(() => ({}));
+      if (createData.success && createData.id && createData.id !== newUser.id) {
+        const serverUser = { ...newUser, id: createData.id };
+        setCurrentUser(serverUser);
+        setSavedUsers(prev => [serverUser, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail.toLowerCase())]);
+        setAllRegisteredAccounts(prev => [serverUser, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail.toLowerCase())]);
+      }
     } catch {
       console.warn('Failed to sync new account to server');
     }

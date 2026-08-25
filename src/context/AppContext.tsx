@@ -1340,7 +1340,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification(
       'success',
       `Akun ${selectedPlan.toUpperCase()} Berhasil Ditambahkan 👑`,
-      `Akun ${userData.name} (${userData.email}) siap digunakan dengan kata sandi: ${cleanPass}`
+      `Akun ${userData.name} (${userData.email}) berhasil dibuat.\n\nEmail: ${userData.email}\nKata Sandi: ${cleanPass}\n\nBagikan email & kata sandi ini ke klien Anda, lalu bagikan link undangan dari menu Referral.`
     );
 
     // Sync to server (Neon DB) and use server ID for referral
@@ -1365,14 +1365,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSavedUsers(prev => prev.map(u => u.email.toLowerCase() === userData.email.toLowerCase() ? { ...u, id: serverId } : u));
 
         // Auto-generate referral code for lifetime accounts using server ID
+        // and show the full invite link so upline can share it immediately.
         if (selectedPlan === 'lifetime') {
           fetch('/api/referral/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: serverId, email: userData.email }),
           }).then(r2 => r2.json()).then(refData => {
-            if (refData.success && refData.isNew) {
-              addNotification('info', 'Kode Referral Di-generate 🔗', `Kode referral ${refData.code} siap digunakan.`);
+            if (refData.success && refData.code) {
+              const inviteLink = `${window.location.origin}/auth?ref=${refData.code}`;
+              addNotification('info', 'Link Undangan Siap 🔗',
+                `Kode: ${refData.code} | Link: ${inviteLink}`
+              );
             }
           }).catch(() => {});
         }

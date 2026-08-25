@@ -1336,7 +1336,7 @@ export const DevPortalView: React.FC = () => {
                     Tambah Akun Baru
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Buat akun klien langsung dengan hak akses & kata sandi
+                    Buat akun klien + link undangan otomatis (Direct Selling)
                   </p>
                 </div>
               </div>

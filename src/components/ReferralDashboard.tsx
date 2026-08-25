@@ -1,38 +1,45 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { Link2, Copy, Check, Users, DollarSign, Clock, Gift, ExternalLink, Share2 } from 'lucide-react';
+import {
+  Link2, Copy, Check, Users, DollarSign, Clock, Gift,
+  ExternalLink, Share2, TrendingUp, Award, ArrowUpCircle
+} from 'lucide-react';
 
-interface ReferralStats {
-  code: string | null;
-  totalReferrals: number;
-  convertedReferrals: number;
-  totalRewardEarned: number;
-  pendingReward: number;
-  referrals: Array<{
-    id: string;
-    referredEmail: string;
-    referredName: string;
-    status: string;
-    rewardAmount: number;
-    rewardPaid: boolean;
-    referredPlan: string;
-    createdAt: string;
-  }>;
+interface CommissionReferral {
+  id: string;
+  referredEmail: string;
+  referredName: string;
+  status: string;
+  referredPlan: string | null;
+  commission: number;
+  paid: boolean;
+  createdAt: string;
 }
 
-const EMPTY_STATS: ReferralStats = {
-  code: null,
+interface CommissionSummary {
+  totalReferrals: number;
+  convertedCount: number;
+  pendingCount: number;
+  commissionPerConversion: number;
+  totalCommission: number;
+  paidCommission: number;
+  unpaidCommission: number;
+  referrals: CommissionReferral[];
+}
+
+const EMPTY_SUMMARY: CommissionSummary = {
   totalReferrals: 0,
-  convertedReferrals: 0,
-  totalRewardEarned: 0,
-  pendingReward: 0,
+  convertedCount: 0,
+  pendingCount: 0,
+  commissionPerConversion: 30000,
+  totalCommission: 0,
+  paidCommission: 0,
+  unpaidCommission: 0,
   referrals: [],
 };
 
 /**
- * Offline / static-hosting fallback: a stable per-account code kept in
- * localStorage. Used whenever the referral API is unreachable so the invite
- * link ALWAYS shows for lifetime users instead of silently disappearing.
+ * Offline / static-hosting fallback: stable per-account code in localStorage.
  */
 function getOrCreateLocalReferralCode(email: string): string {
   const KEY = 'finvault_referral_codes';
@@ -50,105 +57,55 @@ function getOrCreateLocalReferralCode(email: string): string {
 
 export default function ReferralDashboard() {
   const { currentUser } = useApp();
-  const [stats, setStats] = useState<ReferralStats | null>(null);
+  const [summary, setSummary] = useState<CommissionSummary>(EMPTY_SUMMARY);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState('');
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
 
-  const applyInviteLink = useCallback((code: string | null | undefined) => {
-    if (code) setInviteLink(`${window.location.origin}/auth?ref=${code}`);
+  const applyCode = useCallback((code: string | null | undefined) => {
+    if (code) {
+      setReferralCode(code);
+      setInviteLink(`${window.location.origin}/auth?ref=${code}`);
+    }
   }, []);
 
-  const fetchStats = useCallback(async () => {
+  const fetchCommission = useCallback(async () => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/referral/stats/${currentUser.id}?email=${encodeURIComponent(currentUser.email)}`);
+      const res = await fetch(
+        `/api/commission/summary/${currentUser.id}?email=${encodeURIComponent(currentUser.email)}`
+      );
       const data = await res.json();
       if (data.success) {
-        const serverCode: string | null = data.code || null;
-        // Show something immediately (stable local code), then make sure the
-        // server also has a persistent code so the link works across devices.
-        const localCode = serverCode || getOrCreateLocalReferralCode(currentUser.email);
-        setStats({ ...EMPTY_STATS, ...data, code: localCode });
-        applyInviteLink(localCode);
-        if (!serverCode) {
-          try {
-            const genRes = await fetch('/api/referral/generate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: currentUser.id, email: currentUser.email }),
-            });
-            const genData = await genRes.json();
-            if (genData.success && genData.code) {
-              setStats(prev => (prev ? { ...prev, code: genData.code } : prev));
-              applyInviteLink(genData.code);
-            }
-          } catch { /* offline — local code stays */ }
+        setSummary({ ...EMPTY_SUMMARY, ...data });
+        // Also fetch the referral code (may be different from commission data)
+        try {
+          const codeRes = await fetch(
+            `/api/referral/stats/${currentUser.id}?email=${encodeURIComponent(currentUser.email)}`
+          );
+          const codeData = await codeRes.json();
+          if (codeData.success && codeData.code) {
+            applyCode(codeData.code);
+          } else {
+            applyCode(getOrCreateLocalReferralCode(currentUser.email));
+          }
+        } catch {
+          applyCode(getOrCreateLocalReferralCode(currentUser.email));
         }
         return;
       }
     } catch (err) {
-      console.warn('Referral API unavailable — using local fallback code:', err);
+      console.warn('Commission API unavailable — using local fallback:', err);
     }
+    // Offline fallback
     const localCode = getOrCreateLocalReferralCode(currentUser.email);
-    setStats({ ...EMPTY_STATS, code: localCode });
-    applyInviteLink(localCode);
-  }, [currentUser, applyInviteLink]);
+    applyCode(localCode);
+  }, [currentUser, applyCode]);
 
   useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
-
-  // Auto-generate referral code for lifetime users who don't have one yet.
-  // The local fallback guarantees a code exists even if this request fails.
-  useEffect(() => {
-    if (!loading && currentUser && !stats?.code && currentUser.plan === 'lifetime') {
-      const localCode = getOrCreateLocalReferralCode(currentUser.email);
-      setStats(prev => (prev ? { ...prev, code: prev.code || localCode } : { ...EMPTY_STATS, code: localCode }));
-      applyInviteLink(localCode);
-      (async () => {
-        try {
-          const res = await fetch('/api/referral/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, email: currentUser.email }),
-          });
-          const data = await res.json();
-          if (data.success && data.code) {
-            applyInviteLink(data.code);
-            await fetchStats();
-          }
-        } catch (err) {
-          console.warn('Auto-generate skipped (API unavailable), local code active:', err);
-        }
-      })();
-    }
-  }, [loading, currentUser, stats?.code, fetchStats, applyInviteLink]);
-
-  const handleGenerateLink = async () => {
-    if (!currentUser) return;
-    setGenerating(true);
-    try {
-      const res = await fetch('/api/referral/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, email: currentUser.email }),
-      });
-      const data = await res.json();
-      if (data.success && data.code) {
-        applyInviteLink(data.code);
-        await fetchStats();
-      } else {
-        applyInviteLink(getOrCreateLocalReferralCode(currentUser.email));
-      }
-    } catch {
-      // API unreachable (offline/static host) — show the stable local code.
-      applyInviteLink(getOrCreateLocalReferralCode(currentUser.email));
-    } finally {
-      setGenerating(false);
-    }
-  };
+    fetchCommission().finally(() => setLoading(false));
+  }, [fetchCommission]);
 
   const handleCopyLink = async () => {
     if (!inviteLink) return;
@@ -157,13 +114,12 @@ export default function ReferralDashboard() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = inviteLink;
-      document.body.appendChild(textArea);
-      textArea.select();
+      const ta = document.createElement('textarea');
+      ta.value = inviteLink;
+      document.body.appendChild(ta);
+      ta.select();
       document.execCommand('copy');
-      document.body.removeChild(textArea);
+      document.body.removeChild(ta);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -187,18 +143,18 @@ export default function ReferralDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50 p-5 dark:border-amber-900/60 dark:from-amber-950/40 dark:via-amber-950/20 dark:to-orange-950/40">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
-            <Gift className="h-5 w-5" />
+      {/* Header — Commission Overview (separate from bookkeeping) */}
+      <div className="rounded-2xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 via-green-50 to-teal-50 p-5 dark:border-emerald-900/60 dark:from-emerald-950/40 dark:via-green-950/20 dark:to-teal-950/40">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+            <Award className="h-5 w-5" />
           </div>
-          <div>
-            <h3 className="text-sm font-black text-amber-900 dark:text-amber-200">
-              💰 Program Referral — Dapatkan Rp30.000!
+          <div className="flex-1">
+            <h3 className="text-sm font-black text-emerald-900 dark:text-emerald-200">
+              💰 Komisi Penjualan — Direct Selling
             </h3>
-            <p className="text-xs text-amber-700 dark:text-amber-300">
-              Undang teman daftar pakai linkmu. Setiap yang upgrade ke Paket Berbayar, kamu dapat Rp30.000.
+            <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
+              Komisi ini terpisah dari data pembukuan pribadi Anda. Setiap member yang berhasil diaktifkan mode berbayar oleh admin/dev, Anda mendapat <strong>Rp 30.000</strong>.
             </p>
           </div>
         </div>
@@ -208,7 +164,7 @@ export default function ReferralDashboard() {
       <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
         <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
           <Link2 className="h-4 w-4 text-emerald-600" />
-          Link Undangan
+          Link Undangan Upline
         </h4>
 
         {inviteLink ? (
@@ -244,76 +200,87 @@ export default function ReferralDashboard() {
             </div>
           </div>
         ) : (
-          <div className="text-center">
-            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-              Belum ada link undangan. Klik tombol di bawah untuk membuat.
-            </p>
-            <button
-              onClick={handleGenerateLink}
-              disabled={generating}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:brightness-110 active:scale-95 disabled:opacity-50"
-            >
-              <Gift className="h-4 w-4" />
-              {generating ? 'Membuat...' : 'Generate Link Undangan'}
-            </button>
+          <div className="text-center py-4 text-xs text-slate-500 dark:text-slate-400">
+            Memuat kode referal...
           </div>
         )}
       </div>
 
-      {/* Stats Cards */}
-      {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-3.5 dark:border-blue-950 dark:bg-blue-950/20">
-            <div className="flex items-center justify-between text-xs font-medium text-blue-800 dark:text-blue-300">
-              <span>Total Undangan</span>
-              <Users className="h-4 w-4 text-blue-600" />
-            </div>
-            <div className="mt-1 text-xl font-extrabold text-blue-600 dark:text-blue-400">
-              {stats.totalReferrals}
-            </div>
+      {/* Commission KPI Cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-3.5 dark:border-blue-950 dark:bg-blue-950/20">
+          <div className="flex items-center justify-between text-xs font-medium text-blue-800 dark:text-blue-300">
+            <span>Total Undangan</span>
+            <Users className="h-4 w-4 text-blue-600" />
           </div>
-
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-3.5 dark:border-emerald-950 dark:bg-emerald-950/20">
-            <div className="flex items-center justify-between text-xs font-medium text-emerald-800 dark:text-emerald-300">
-              <span>Converted</span>
-              <Check className="h-4 w-4 text-emerald-600" />
-            </div>
-            <div className="mt-1 text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
-              {stats.convertedReferrals}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-amber-100 bg-amber-50/50 p-3.5 dark:border-amber-950 dark:bg-amber-950/20">
-            <div className="flex items-center justify-between text-xs font-medium text-amber-800 dark:text-amber-300">
-              <span>Total Reward</span>
-              <DollarSign className="h-4 w-4 text-amber-600" />
-            </div>
-            <div className="mt-1 text-xl font-extrabold text-amber-600 dark:text-amber-400">
-              Rp {Number(stats.totalRewardEarned || 0).toLocaleString('id-ID')}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-purple-100 bg-purple-50/50 p-3.5 dark:border-purple-950 dark:bg-purple-950/20">
-            <div className="flex items-center justify-between text-xs font-medium text-purple-800 dark:text-purple-300">
-              <span>Menunggu</span>
-              <Clock className="h-4 w-4 text-purple-600" />
-            </div>
-            <div className="mt-1 text-xl font-extrabold text-purple-600 dark:text-purple-400">
-              Rp {Number(stats.pendingReward || 0).toLocaleString('id-ID')}
-            </div>
+          <div className="mt-1 text-xl font-extrabold text-blue-600 dark:text-blue-400">
+            {summary.totalReferrals}
           </div>
         </div>
-      )}
 
-      {/* Referred Users List */}
-      {stats && stats.referrals.length > 0 && (
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-3.5 dark:border-emerald-950 dark:bg-emerald-950/20">
+          <div className="flex items-center justify-between text-xs font-medium text-emerald-800 dark:text-emerald-300">
+            <span>Berhasil Aktif</span>
+            <ArrowUpCircle className="h-4 w-4 text-emerald-600" />
+          </div>
+          <div className="mt-1 text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+            {summary.convertedCount}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-amber-100 bg-amber-50/50 p-3.5 dark:border-amber-950 dark:bg-amber-950/20">
+          <div className="flex items-center justify-between text-xs font-medium text-amber-800 dark:text-amber-300">
+            <span>Total Komisi</span>
+            <DollarSign className="h-4 w-4 text-amber-600" />
+          </div>
+          <div className="mt-1 text-xl font-extrabold text-amber-600 dark:text-amber-400">
+            Rp {Number(summary.totalCommission).toLocaleString('id-ID')}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-purple-100 bg-purple-50/50 p-3.5 dark:border-purple-950 dark:bg-purple-950/20">
+          <div className="flex items-center justify-between text-xs font-medium text-purple-800 dark:text-purple-300">
+            <span>Menunggu Konfirmasi</span>
+            <Clock className="h-4 w-4 text-purple-600" />
+          </div>
+          <div className="mt-1 text-xl font-extrabold text-purple-600 dark:text-purple-400">
+            {summary.pendingCount}
+          </div>
+          <p className="text-[10px] text-purple-600/70">belum aktif berbayar</p>
+        </div>
+      </div>
+
+      {/* Commission Breakdown */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            Sudah Dibayar
+          </div>
+          <div className="mt-2 text-lg font-extrabold text-emerald-600">
+            Rp {Number(summary.paidCommission).toLocaleString('id-ID')}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+            <Clock className="h-4 w-4 text-amber-500" />
+            Belum Dibayar
+          </div>
+          <div className="mt-2 text-lg font-extrabold text-amber-600">
+            Rp {Number(summary.unpaidCommission).toLocaleString('id-ID')}
+          </div>
+        </div>
+      </div>
+
+      {/* Referral User List */}
+      {summary.referrals.length > 0 && (
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
             <Users className="h-4 w-4 text-emerald-600" />
-            Daftar Pengguna Undangan
+            Daftar Member (Direct Selling)
           </h4>
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {stats.referrals.map((ref) => (
+            {summary.referrals.map((ref) => (
               <div key={ref.id} className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
@@ -336,11 +303,11 @@ export default function ReferralDashboard() {
                       ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
                       : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                   }`}>
-                    {ref.status === 'converted' ? '💎 Converted' : ref.status === 'registered' ? '📧 Terdaftar' : '⏳ Pending'}
+                    {ref.status === 'converted' ? '💎 Aktif Berbayar' : ref.status === 'registered' ? '📧 Terdaftar' : '⏳ Pending'}
                   </span>
                   {ref.status === 'converted' && (
-                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                      +Rp {Number(ref.rewardAmount || 30000).toLocaleString('id-ID')}
+                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                      +Rp {Number(ref.commission || 30000).toLocaleString('id-ID')}
                     </span>
                   )}
                 </div>
@@ -350,15 +317,15 @@ export default function ReferralDashboard() {
         </div>
       )}
 
-      {/* How it works */}
+      {/* How Commission Works */}
       <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <h4 className="mb-3 text-sm font-bold text-slate-900 dark:text-white">Cara Kerja</h4>
+        <h4 className="mb-3 text-sm font-bold text-slate-900 dark:text-white">Cara Kerja Komisi</h4>
         <div className="space-y-3">
           {[
-            { step: '1', title: 'Generate Link', desc: 'Klik tombol untuk membuat link unik', icon: '🔗' },
-            { step: '2', title: 'Share ke Teman', desc: 'Kirim link via WhatsApp, email, atau media sosial', icon: '📤' },
-            { step: '3', title: 'Teman Daftar', desc: 'Teman kamu daftar pakai link undanganmu', icon: '📝' },
-            { step: '4', title: 'Upgrade & Dapat Reward', desc: 'Saat teman upgrade ke Paket Berbayar, kamu dapat Rp30.000', icon: '💰' },
+            { step: '1', title: 'Buat Akun Member', desc: 'Buat akun baru untuk klien/rekan via Dev Portal', icon: '👤' },
+            { step: '2', title: 'Share Link Undangan', desc: 'Kirim link ke member agar mereka bisa masuk', icon: '📤' },
+            { step: '3', title: 'Member Aktif Berbayar', desc: 'Admin/dev mengaktifkan paket berbayar untuk member', icon: '💳' },
+            { step: '4', title: 'Komisi Masuk', desc: 'Anda mendapat Rp30.000 per konversi (direct selling, 1-level)', icon: '💰' },
           ].map((item) => (
             <div key={item.step} className="flex items-start gap-3">
               <span className="text-lg">{item.icon}</span>
@@ -368,6 +335,9 @@ export default function ReferralDashboard() {
               </div>
             </div>
           ))}
+        </div>
+        <div className="mt-4 rounded-xl bg-slate-50 p-3 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+          <strong>Catatan:</strong> Sistem ini menggunakan model <strong>Direct Selling</strong> (1-level), bukan MLM. Komisi hanya dihitung dari member langsung yang Anda daftarkan.
         </div>
       </div>
     </div>

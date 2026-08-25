@@ -126,12 +126,12 @@ export const AuthView: React.FC = () => {
           setForgotStep('verify');
           setIsForgotPasswordOpen(true);
         }
-      // Read referral code from URL
+      // Read referral code from URL — this account was created by an upline.
       const refCode = params.get('ref');
       if (refCode) {
         setReferralCode(refCode);
-        setMode('register'); // Auto-switch to register mode
-        // Resolve referrer name
+        setMode('login'); // Stay on login — account already exists
+        // Resolve referrer name for the banner
         fetch(`/api/referral/resolve/${refCode}`)
           .then(r => r.json())
           .then(data => {
@@ -530,7 +530,9 @@ export const AuthView: React.FC = () => {
             <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
               {currentUser
                 ? `Anda terhubung sebagai ${currentUser.email}. Semua data transaksi tersimpan aman.`
-                : 'Masuk atau daftar untuk mendapatkan Trial 7 Hari gratis.'}
+                : referralName
+                ? `Akun Anda telah dibuat oleh ${referralName}. Masuk dengan email & kata sandi yang diberikan.`
+                : 'Masuk ke Pembukuan BukuKas Pro.'}
             </p>
           </div>
 
@@ -915,16 +917,31 @@ export const AuthView: React.FC = () => {
         <div className="grid gap-6 md:grid-cols-12">
           <div className="md:col-span-7">
             <div className="rounded-3xl border border-slate-200/90 bg-white p-6 shadow-sm sm:p-8 dark:border-slate-800 dark:bg-slate-900">
+              {/* Upline Referral Banner */}
+              {referralName && (
+                <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-xs text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <Users className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>🔗 Akun dari Upline Anda</span>
+                  </p>
+                  <p className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-300">
+                    Akun ini dibuat oleh <strong>{referralName}</strong>. Masukkan email & kata sandi yang diberikan oleh upline Anda.
+                  </p>
+                </div>
+              )}
+
               {/* Restricted Registration Notice */}
-              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-                <p className="font-bold flex items-center gap-1.5">
-                  <Shield className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  <span>🔒 Pendaftaran Terbatas</span>
-                </p>
-                <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">
-                  Hanya admin/developer yang dapat membuat akun baru. Hubungi admin untuk mendapatkan akses.
-                </p>
-              </div>
+              {!referralName && (
+                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <Shield className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    <span>🔒 Pendaftaran Terbatas</span>
+                  </p>
+                  <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">
+                    Hanya admin/upline yang dapat membuat akun baru. Hubungi admin atau upline Anda untuk mendapatkan akses.
+                  </p>
+                </div>
+              )}
 
               {errorMessage && (
                 <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs font-medium text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">

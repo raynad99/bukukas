@@ -8,20 +8,64 @@ import { Share2, Copy, Check, MessageCircle, ExternalLink, Gift, Smartphone, Che
  */
 const MESSAGE_TEMPLATES = [
   {
+    id: 'feature',
+    label: '🌟 Fitur Lengkap',
+    icon: '🌟',
+    desc: 'Highlight semua fitur unggulan BukuKas Pro',
+    build: (name: string, link: string) =>
+      `Halo ${name}! 👋
+
+Tau gak sih ada app pembukuan yang super lengkap namanya *BukuKas Pro*? 🔥
+
+Yang bikin beda dari app lain:
+
+💰 *Multi Mata Uang & Kurs Live*
+→ IDR, USD, SGD, AUD, EUR, GBP, JPY, MYR, NZD & 13+ mata uang
+→ Kurs update real-time dari pasar (otomatis setiap 60 detik!)
+→ Konversi otomatis di setiap transaksi
+
+📊 *Laporan Keuangan Profesional*
+→ Export PDF & CSV laporan instant
+→ Grafik pie chart pengeluaran per kategori
+→ Ringkasan arus kas & tingkat tabungan
+
+🔒 *Keamanan Level Bank*
+→ Enkripsi end-to-end (E2E) semua data
+→ Brankas digital dengan passphrase
+→ Backup cloud otomatis ke Google Drive
+
+🤖 *AI Advisor Finansial*
+→ Chat AI untuk saran keuangan personal
+→ Analisis pola pengeluaran
+→ Rekomendasi penghematan
+
+📱 *Catatan Hutang & Piutang*
+→ Tracking tempo pembayaran
+→ Pengingat otomatis jatuh tempo
+→ Laporan piutang bersih
+
+Coba GRATIS 7 hari sekarang 👇
+🔗 ${link}
+
+Paket 1 tahun: Rp199.000 (hemat 87%!) 🚀`,
+  },
+  {
     id: 'casual',
-    label: '📢 Kasual & Ramah',
+    label: '🤝 Kasual & Ramah',
     icon: '🤝',
     desc: 'Pesan santai, cocok untuk teman & keluarga',
     build: (name: string, link: string) =>
       `Halo ${name}! 👋
 
-Aku lagi pakai aplikasi pembukuan buat bisniscoba namanya *BukuKas Pro* dan recommended banget! ✅
+Aku lagi pakai app pembukuan namanya *BukuKas Pro* dan recommended banget buat yang punya bisnis! ✅
 
 Yang bikin suka:
-✓ Pencatatan transaksi super gampang
-✓ Bisa multi mata uang + kurs live
-✓ Export laporan PDF profesional
-✓ Data aman terenkripsi di cloud
+✓ Kurs mata uang 13+ negara update live (IDR, USD, SGD, EUR, JPY, dll)
+✓ Export laporan PDF & CSV profesional dalam hitungan detik
+✓ AI advisor yang bisa kasih saran keuangan personal 🤖
+✓ Data aman terenkripsi E2E + backup cloud otomatis
+✓ Tracking hutang & piutang dengan pengingat otomatis
+✓ Konversi kurs otomatis di setiap transaksi
 
 Coba gratis 7 hari, daftar disini ya 👇
 🔗 ${link}
@@ -42,14 +86,60 @@ Kalau iya, cobain *BukuKas Pro* — aplikasi pembukuan khusus UMKM Indonesia �
 
 Masalah yang bisa diselesaikan:
 ❌ Lupa catat pengeluaran → ✅ Notifikasi otomatis
-❌ Bingung laporan pajak → ✅ Export PDF instant
-❌ Data hilang HP rusak → ✅ Backup cloud aman
-❌ Kurs valas manual → ✅ Kurs live real-time
+❌ Bingung laporan pajak → ✅ Export PDF & CSV instant
+❌ Data hilang HP rusak → ✅ Backup cloud terenkripsi otomatis
+❌ Kurs valas manual → ✅ Kurs live 13+ mata uang (USD, SGD, EUR, JPY, AUD, MYR, dll)
+❌ Lupa tagihan hutang → ✅ Pengingat tempo & tracking piutang
+❌ Butuh saran keuangan → ✅ AI advisor finansial built-in 🤖
+❌ Hitung konversi ribet → ✅ Kalkulator kurs otomatis real-time
+
+Fitur lengkap:
+📊 Dashboard keuangan visual
+💳 Multi rekening (tunai, QRIS, bank, e-wallet)
+🏷️ Kategori & anggaran otomatis
+📱 Aplikasi mobile-friendly (PWA)
 
 Daftar GRATIS 7 hari tanpa kartu kredit 👇
 🔗 ${link}
 
 Paket 1 tahun: Rp199.000 (hemat 87% dari bulanan!)`,
+  },
+  {
+    id: 'currency',
+    label: '💱 Kurs & Multi-Mata Uang',
+    icon: '💱',
+    desc: 'Highlight fitur kurs live & multi mata uang',
+    build: (name: string, link: string) =>
+      `💱 *Kurs Mata Uang 13+ Negara — Update Real-Time!*
+
+${name}, kalau bisnismu pakai multi mata uang, ini app yang tepat! 🎯
+
+*BukuKas Pro* support:
+🇮🇩 IDR Rupiah
+🇺🇸 USD Dollar
+🇸🇬 SGD Sing Dollar
+🇦🇺 AUD Australian Dollar
+🇪🇺 EUR Euro
+🇬🇧 GBP Pound Sterling
+🇯🇵 JPY Yen Jepang
+🇲🇾 MYR Ringgit Malaysia
+🇳🇿 NZD New Zealand Dollar
+🇭🇰 HKD Hong Kong Dollar
+🇹🇼 TWD Taiwan Dollar
+🇧🇬 BGN Bulgarian Lev
+🇰🇷 KRW Korean Won
+
+Semua kurs *update live dari pasar* setiap 60 detik! 📈
+
+Contoh penggunaan:
+→ Transaksi dalam USD, otomatis convert ke IDR
+→ Laporan gabungan multi mata uang
+→ Kalkulator konversi instant di dashboard
+
+Coba GRATIS 7 hari 👇
+🔗 ${link}
+
+Paket 1 tahun: Rp199.000 (Rp16rb/bln) 🚀`,
   },
   {
     id: 'urgency',
@@ -63,9 +153,14 @@ Paket 1 tahun: Rp199.000 (hemat 87% dari bulanan!)`,
 
 Yang kamu dapatkan GRATIS 7 hari:
 🚀 Semua fitur premium unlocked
-📊 Laporan keuangan instant
-💬 Konsultasi setup gratis
-☁️ Cloud backup unlimited
+📊 Dashboard keuangan visual + grafik
+💱 Kurs live 13+ mata uang (IDR, USD, SGD, EUR, JPY, dll)
+🤖 AI advisor finansial personal
+🔒 Enkripsi E2E + backup cloud otomatis
+📱 Tracking hutang & piutang + pengingat tempo
+💳 Multi rekening (tunai, QRIS, bank, e-wallet)
+📥 Export PDF & CSV laporan professional
+🏷️ Kategori & anggaran otomatis
 
 Bonus: Paket 1 tahun cuma Rp199.000
 (Sama dengan 2x makan siang aja! 😂)
@@ -85,15 +180,18 @@ Jangan tunda lagi, mulai sekarang! 💪`,
 
 Aku dan beberapa teman UMKM sudah pakai *BukuKas Pro* dan hasilnya:
 
-💬 "Gak perlu catat manual lagi, semua otomatis!" — Rina, Toko Online
-💬 "Laporan pajak jadi gampang banget!" — Budi, Konveksi
-💬 "Cuma Rp199rb/tahun, worth it banget!" — Sari, Kedai Kopi
+💬 "Gak perlu catat manual lagi, semua otomatis! Termasuk konversi kurs USD ke IDR!" — Rina, Toko Online
+💬 "Laporan pajak jadi gampang banget, tinggal export PDF!" — Budi, Konveksi
+💬 "Kurs live 13 mata uang langsung di dashboard, keren banget!" — Sari, Kedai Kopi
+💬 "AI advisor nya kasih saran penghematan yang beneran work!" — Andi, Freelancer
 
 Fitur unggulan:
-✅ Pencatatan transaksi otomatis
-✅ Multi mata uang & kurs live
-✅ Export PDF profesional
-✅ Backup cloud terenkripsi
+✅ Kurs real-time 13+ mata uang (IDR, USD, SGD, EUR, JPY, AUD, MYR, dll)
+✅ AI advisor finansial personal 🤖
+✅ Export PDF & CSV laporan profesional
+✅ Backup cloud terenkripsi E2E
+✅ Tracking hutang & piutang dengan pengingat
+✅ Multi rekening (tunai, QRIS, bank, e-wallet)
 
 Coba GRATIS 7 hari tanpa komitmen 👇
 🔗 ${link}`,

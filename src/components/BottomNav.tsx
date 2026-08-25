@@ -17,6 +17,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import SharePromoButton from './SharePromoButton';
 
 export const BottomNav: React.FC = () => {
   const { activeView, setActiveView, t, bills, loans, setIsAddTransactionOpen, currentUser, businessMessages } = useApp();
@@ -161,6 +162,11 @@ export const BottomNav: React.FC = () => {
           <span className="mt-0.5 text-[10px]">Lainnya</span>
         </button>
       </nav>
+
+      {/* Mobile Share Promo Button - bottom left */}
+      <div className="fixed left-4 z-30 md:hidden" style={{ bottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px) + 12px)' }}>
+        <SharePromoButton />
+      </div>
     </>
   );
 };

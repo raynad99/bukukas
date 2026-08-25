@@ -79,9 +79,9 @@ const AppContent: React.FC = () => {
       {/* Mobile Bottom Navigation Bar (hanya untuk user yang sudah login) */}
       {!isGuest && <BottomNav />}
 
-      {/* Floating AI Chatbot Assistant Widget (Desktop & Tablet, user login saja) */}
+      {/* Floating Share Promo & AI Chatbot (Desktop & Tablet, user login saja) */}
       {!isGuest && activeView !== 'ai' && (
-        <div className="fixed right-6 bottom-6 z-40 hidden md:block">
+        <div className="fixed right-6 bottom-6 z-40 hidden md:flex flex-col items-end gap-3">
           {isAiFloatingOpen ? (
             <div className="relative">
               <AiChatBot isEmbedded={false} onClose={() => setIsAiFloatingOpen(false)} />
@@ -101,6 +101,7 @@ const AppContent: React.FC = () => {
               </span>
             </button>
           )}
+          <SharePromoButton />
         </div>
       )}
 

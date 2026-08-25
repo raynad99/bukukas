@@ -68,6 +68,11 @@ export async function createTablesIfNotExist(): Promise<void> {
       await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS referred_by TEXT`;
     } catch (e) { /* column already exists */ }
 
+    // Soft-delete flag: deleted accounts are hidden but kept to prevent re-sync from browser
+    try {
+      await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`;
+    } catch (e) { /* column already exists */ }
+
     await sql`
       CREATE TABLE IF NOT EXISTS server_messages (
         id TEXT PRIMARY KEY,

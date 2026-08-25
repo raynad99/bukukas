@@ -241,6 +241,40 @@ if (!isDbAvailable()) {
   console.log(`[Storage] Loaded ${inMemoryServerAccounts.size} accounts from disk (JSON mode)`);
 }
 
+// ==================== Referral Store (persistent JSON fallback) ====================
+// Keeps referral codes STABLE across server restarts even without DATABASE_URL.
+const REFERRAL_FILE = path.join(DATA_DIR, "referrals.json");
+interface StoredReferralCode { id: string; userId: string; email: string; code: string; createdAt: string; isActive: boolean; }
+interface StoredReferral { id: string; referrerUserId: string; referrerEmail: string; referredEmail: string; referredUserId?: string | null; referredName?: string | null; status: string; rewardAmount: number; rewardPaid: boolean; referredPlan?: string | null; createdAt: string; }
+const inMemoryReferralCodes = new Map<string, StoredReferralCode>(); // key: id
+const inMemoryReferrals = new Map<string, StoredReferral>(); // key: id
+
+function scheduleSaveReferrals() {
+  setTimeout(() => {
+    saveJson(REFERRAL_FILE, { codes: Array.from(inMemoryReferralCodes.values()), referrals: Array.from(inMemoryReferrals.values()) });
+  }, 500);
+}
+
+if (!isDbAvailable()) {
+  const saved = loadJson<{ codes?: StoredReferralCode[]; referrals?: StoredReferral[] }>(REFERRAL_FILE, {});
+  for (const c of saved.codes || []) if (c?.code && c?.id) inMemoryReferralCodes.set(c.id, c);
+  for (const r of saved.referrals || []) if (r?.id) inMemoryReferrals.set(r.id, r);
+  console.log(`[Storage] Loaded ${inMemoryReferralCodes.size} referral codes from disk (JSON mode)`);
+}
+
+function findReferralCodeByOwner(userId: string, email?: string | null): StoredReferralCode | null {
+  const lowerEmail = email ? String(email).toLowerCase() : null;
+  for (const c of inMemoryReferralCodes.values()) {
+    if (!c.isActive) continue;
+    if (c.userId === userId || (lowerEmail && c.email === lowerEmail)) return c;
+  }
+  return null;
+}
+
+// In-memory blocklist of deleted emails — prevents browser sync from recreating
+// accounts that were explicitly removed via /api/accounts/delete.
+const deletedEmails = new Set<string>();
+
 const inMemoryServerMessages: ServerBusinessMessage[] = [];
 
 // Load messages from DB or JSON fallback on startup
@@ -503,8 +537,14 @@ async function startServer() {
 
       if (isDbAvailable()) {
         const sql = getSql();
-        const existing = await sql`SELECT code FROM referral_codes WHERE user_id = ${userId} AND is_active = true LIMIT 1`;
+        // Email-first lookup: a code created under an old/local user_id must
+        // still be returned so the code survives device/session changes.
+        const existing = await sql`SELECT id, code, user_id FROM referral_codes WHERE (user_id = ${userId} OR email = ${String(email).toLowerCase()}) AND is_active = true ORDER BY created_at DESC LIMIT 1`;
         if (existing.length > 0) {
+          // Heal stale user_id so future lookups by the current session ID match
+          if (existing[0].user_id !== userId) {
+            await sql`UPDATE referral_codes SET user_id = ${userId} WHERE id = ${existing[0].id}`;
+          }
           return res.json({ success: true, code: existing[0].code, isNew: false });
         }
 
@@ -519,7 +559,21 @@ async function startServer() {
         return res.json({ success: true, code, isNew: true });
       }
 
+      // JSON fallback — persistent, stable per owner
+      const lowerEmail = String(email).toLowerCase();
+      const existingCode = findReferralCodeByOwner(userId, lowerEmail);
+      if (existingCode) {
+        if (existingCode.userId !== userId) {
+          existingCode.userId = userId;
+          scheduleSaveReferrals();
+        }
+        return res.json({ success: true, code: existingCode.code, isNew: false });
+      }
       const code = 'BK' + Math.random().toString(36).slice(2, 10).toUpperCase();
+      const id = `ref-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      inMemoryReferralCodes.set(id, { id, userId, email: lowerEmail, code, createdAt: new Date().toISOString(), isActive: true });
+      scheduleSaveReferrals();
+      console.log(`[Referral] Generated code ${code} for ${lowerEmail} (JSON mode)`);
       return res.json({ success: true, code, isNew: true });
     } catch (err: any) {
       console.error('[Referral] Generate error:', err);
@@ -535,10 +589,24 @@ async function startServer() {
 
       if (isDbAvailable()) {
         const sql = getSql();
-        const referrals = await sql`SELECT * FROM referrals WHERE referrer_user_id = ${userId} ORDER BY created_at DESC`;
-        const codeRow = await sql`SELECT code FROM referral_codes WHERE user_id = ${userId} AND is_active = true LIMIT 1`;
-        const totalReward = await sql`SELECT COALESCE(SUM(reward_amount), 0)::int as total FROM referrals WHERE referrer_user_id = ${userId} AND reward_paid = true`;
-        const pendingReward = await sql`SELECT COALESCE(SUM(reward_amount), 0)::int as total FROM referrals WHERE referrer_user_id = ${userId} AND reward_paid = false AND status = 'converted'`;
+        const emailParam = typeof req.query.email === 'string' ? req.query.email.toLowerCase() : null;
+        // Resolve owner: by user_id first, then fall back to email (heals stale IDs)
+        let ownerId = userId;
+        if (emailParam) {
+          const codeRow0 = await sql`SELECT id, user_id FROM referral_codes WHERE (user_id = ${userId} OR email = ${emailParam}) AND is_active = true ORDER BY created_at DESC LIMIT 1`;
+          if (codeRow0.length > 0 && codeRow0[0].user_id !== userId) {
+            const staleId = codeRow0[0].user_id;
+            await sql`UPDATE referral_codes SET user_id = ${userId} WHERE id = ${codeRow0[0].id}`;
+            await sql`UPDATE referrals SET referrer_user_id = ${userId} WHERE referrer_user_id = ${staleId}`;
+          }
+        }
+        const referrals = await sql`SELECT * FROM referrals WHERE referrer_user_id = ${ownerId} ORDER BY created_at DESC`;
+        const codeQuery = emailParam
+          ? sql`SELECT code FROM referral_codes WHERE (user_id = ${ownerId} OR email = ${emailParam}) AND is_active = true ORDER BY created_at DESC LIMIT 1`
+          : sql`SELECT code FROM referral_codes WHERE user_id = ${ownerId} AND is_active = true LIMIT 1`;
+        const codeRow = await codeQuery;
+        const totalReward = await sql`SELECT COALESCE(SUM(reward_amount), 0)::int as total FROM referrals WHERE referrer_user_id = ${ownerId} AND reward_paid = true`;
+        const pendingReward = await sql`SELECT COALESCE(SUM(reward_amount), 0)::int as total FROM referrals WHERE referrer_user_id = ${ownerId} AND reward_paid = false AND status = 'converted'`;
 
         return res.json({
           success: true,
@@ -560,7 +628,31 @@ async function startServer() {
         });
       }
 
-      return res.json({ success: true, code: null, totalReferrals: 0, convertedReferrals: 0, totalRewardEarned: 0, pendingReward: 0, referrals: [] });
+      // JSON fallback
+      const lowerEmail = typeof req.query.email === 'string' ? req.query.email.toLowerCase() : null;
+      const owned = findReferralCodeByOwner(userId, lowerEmail);
+      if (owned && owned.userId !== userId) owned.userId = userId;
+      const ownerId = owned ? owned.userId : userId;
+      const myRefs = Array.from(inMemoryReferrals.values()).filter(r => r.referrerUserId === ownerId);
+      scheduleSaveReferrals();
+      return res.json({
+        success: true,
+        code: owned?.code || null,
+        totalReferrals: myRefs.length,
+        convertedReferrals: myRefs.filter(r => r.status === 'converted').length,
+        totalRewardEarned: myRefs.filter(r => r.rewardPaid).reduce((s, r) => s + (r.rewardAmount || 0), 0),
+        pendingReward: myRefs.filter(r => !r.rewardPaid && r.status === 'converted').reduce((s, r) => s + (r.rewardAmount || 0), 0),
+        referrals: myRefs.map(r => ({
+          id: r.id,
+          referredEmail: r.referredEmail,
+          referredName: r.referredName,
+          status: r.status,
+          rewardAmount: r.rewardAmount,
+          rewardPaid: r.rewardPaid,
+          referredPlan: r.referredPlan || null,
+          createdAt: r.createdAt,
+        })),
+      });
     } catch (err: any) {
       console.error('[Referral] Stats error:', err);
       res.status(500).json({ success: false, error: err.message });
@@ -598,7 +690,28 @@ async function startServer() {
         return res.json({ success: true, referrerName: referrer.email });
       }
 
-      return res.json({ success: true });
+      // JSON fallback
+      const codeRec = Array.from(inMemoryReferralCodes.values()).find(c => c.code === String(code).toUpperCase() && c.isActive);
+      if (!codeRec) return res.status(404).json({ success: false, error: 'Kode undangan tidak valid.' });
+      const lowerReferred = String(referredEmail).toLowerCase();
+      if (Array.from(inMemoryReferrals.values()).some(r => r.referredEmail === lowerReferred)) {
+        return res.json({ success: true, message: 'Already referred' });
+      }
+      inMemoryReferrals.set(`ref-${Date.now()}`, {
+        id: `ref-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        referrerUserId: codeRec.userId,
+        referrerEmail: codeRec.email,
+        referredEmail: lowerReferred,
+        referredUserId: referredUserId || null,
+        referredName: referredName || null,
+        status: 'registered',
+        rewardAmount: 30000,
+        rewardPaid: false,
+        createdAt: new Date().toISOString(),
+      });
+      scheduleSaveReferrals();
+      console.log(`[Referral] ${lowerReferred} registered via code ${code} from ${codeRec.email} (JSON mode)`);
+      return res.json({ success: true, referrerName: codeRec.email });
     } catch (err: any) {
       console.error('[Referral] Track error:', err);
       res.status(500).json({ success: false, error: err.message });
@@ -623,6 +736,16 @@ async function startServer() {
         return res.json({ success: true });
       }
 
+      // JSON fallback
+      let converted = false;
+      for (const r of inMemoryReferrals.values()) {
+        if (r.referredEmail === String(referredEmail).toLowerCase() && r.status === 'registered') {
+          r.status = 'converted';
+          r.referredPlan = 'paid';
+          converted = true;
+        }
+      }
+      if (converted) scheduleSaveReferrals();
       return res.json({ success: true });
     } catch (err: any) {
       console.error('[Referral] Convert error:', err);
@@ -645,7 +768,10 @@ async function startServer() {
         return res.json({ success: true, referrerName: codeRow[0].email.split('@')[0], code: codeRow[0].code });
       }
 
-      return res.status(404).json({ success: false, error: 'Database tidak tersedia.' });
+      // JSON fallback
+      const codeRec = Array.from(inMemoryReferralCodes.values()).find(c => c.code === String(code).toUpperCase() && c.isActive);
+      if (!codeRec) return res.status(404).json({ success: false, error: 'Kode undangan tidak valid atau sudah tidak aktif.' });
+      return res.json({ success: true, referrerName: codeRec.email.split('@')[0], code: codeRec.code });
     } catch (err: any) {
       console.error('[Referral] Resolve error:', err);
       res.status(500).json({ success: false, error: err.message });
@@ -823,7 +949,7 @@ async function startServer() {
     try {
       if (isDbAvailable()) {
         const sql = getSql();
-        const rows = await sql`SELECT * FROM server_accounts ORDER BY synced_at DESC`;
+        const rows = await sql`SELECT * FROM server_accounts WHERE is_active IS DISTINCT FROM false ORDER BY synced_at DESC`;
         const accounts = rows.map((r: any) => ({
           id: r.id, name: r.name, email: r.email, photoUrl: r.photo_url,
           provider: r.provider, role: r.role, plan: r.plan, status: r.status,
@@ -883,6 +1009,74 @@ async function startServer() {
       res.json({ success: true, id, message: `Akun ${name} berhasil dibuat.` });
     } catch (err: any) {
       console.error('[DB] POST /api/accounts/create error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Account Delete — remove a single account + its referral artifacts by email/ID.
+  // Protected admin/dev accounts can never be deleted through this endpoint.
+  app.post('/api/accounts/delete', async (req, res) => {
+    const PROTECTED_EMAILS = ['admin@bukukas.ai.studio', 'indoclickshop@gmail.com'];
+    try {
+      const { email, userId } = req.body;
+      if (!email && !userId) {
+        return res.status(400).json({ success: false, error: 'email or userId required' });
+      }
+      const targetEmail = email ? String(email).toLowerCase() : null;
+      if (targetEmail && PROTECTED_EMAILS.includes(targetEmail)) {
+        return res.status(403).json({ success: false, error: 'Akun admin/dev dilindungi dan tidak dapat dihapus.' });
+      }
+
+      let deleted = 0;
+      if (isDbAvailable()) {
+        const sql = getSql();
+        if (targetEmail) {
+          const rows = await sql`DELETE FROM server_accounts WHERE email = ${targetEmail} RETURNING id`;
+          deleted += rows.length;
+        } else if (userId) {
+          const rows = await sql`DELETE FROM server_accounts WHERE id = ${userId} RETURNING id`;
+          deleted += rows.length;
+        }
+        // Remove related referral artifacts so no orphan/junk rows remain
+        if (targetEmail) {
+          await sql`DELETE FROM referral_codes WHERE email = ${targetEmail}`;
+          await sql`DELETE FROM referrals WHERE referrer_email = ${targetEmail} OR referred_email = ${targetEmail}`;
+        }
+        if (userId) {
+          await sql`DELETE FROM referral_codes WHERE user_id = ${userId}`;
+          await sql`DELETE FROM referrals WHERE referrer_user_id = ${userId}`;
+        }
+        // Hard-delete the account row so it doesn't reappear from browser sync
+        // (but upsert also checks is_active to be doubly safe)
+        if (targetEmail) {
+          await sql`DELETE FROM server_accounts WHERE email = ${targetEmail}`;
+        } else if (userId) {
+          await sql`DELETE FROM server_accounts WHERE id = ${userId}`;
+        }
+      } else {
+        // JSON fallback
+        for (const [key, acc] of inMemoryServerAccounts.entries()) {
+          if ((targetEmail && acc.email === targetEmail) || (userId && acc.id === userId)) {
+            inMemoryServerAccounts.delete(key);
+            deleted++;
+          }
+        }
+        scheduleSaveAccounts();
+        for (const [key, c] of inMemoryReferralCodes.entries()) {
+          if ((targetEmail && c.email === targetEmail) || (userId && c.userId === userId)) inMemoryReferralCodes.delete(key);
+        }
+        for (const [key, r] of inMemoryReferrals.entries()) {
+          if ((targetEmail && (r.referrerEmail === targetEmail || r.referredEmail === targetEmail)) || (userId && r.referrerUserId === userId)) {
+            inMemoryReferrals.delete(key);
+          }
+        }
+        scheduleSaveReferrals();
+      }
+      if (targetEmail) deletedEmails.add(targetEmail);
+      console.log(`[DB] Account delete requested for ${targetEmail || userId} — removed ${deleted} account(s) [blocklisted]`);
+      return res.json({ success: true, deleted, message: `${deleted} akun dihapus beserta data referral terkait.` });
+    } catch (err: any) {
+      console.error('[DB] POST /api/accounts/delete error:', err);
       res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -961,8 +1155,16 @@ async function startServer() {
       // Filter out test accounts (stress test, isolation test, etc.)
       const filtered = incoming.filter((raw: any) => {
         const email = String(raw?.email || '').toLowerCase();
-        if (email.includes('@test.dev') || email.includes('@backtest.dev') || email.includes('stress-user') || email.includes('tes-isolasi') || email.includes('tes@') || email.includes('persist-') || email.includes('e2e-test') || email.includes('neon-test') || email.includes('test-sync')) {
-          return false; // Reject test accounts
+        // Reject obvious test/automation accounts
+        if (email.includes('@test.dev') || email.includes('@backtest.dev') || email.includes('@bukukas-test.dev')
+          || email.includes('stress-user') || email.includes('tes-isolasi') || email.includes('isolasi-')
+          || email.includes('tes@') || email.includes('persist-') || email.includes('e2e-test')
+          || email.includes('neon-test') || email.includes('test-sync') || email.includes('test.klien') || email.includes('test.seller')) {
+          return false;
+        }
+        // Prevent accounts explicitly deleted via /api/accounts/delete from reappearing
+        if (deletedEmails.has(email)) {
+          return false;
         }
         return true;
       });

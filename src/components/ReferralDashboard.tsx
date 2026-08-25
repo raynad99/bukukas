@@ -20,6 +20,34 @@ interface ReferralStats {
   }>;
 }
 
+const EMPTY_STATS: ReferralStats = {
+  code: null,
+  totalReferrals: 0,
+  convertedReferrals: 0,
+  totalRewardEarned: 0,
+  pendingReward: 0,
+  referrals: [],
+};
+
+/**
+ * Offline / static-hosting fallback: a stable per-account code kept in
+ * localStorage. Used whenever the referral API is unreachable so the invite
+ * link ALWAYS shows for lifetime users instead of silently disappearing.
+ */
+function getOrCreateLocalReferralCode(email: string): string {
+  const KEY = 'finvault_referral_codes';
+  const mapKey = email.toLowerCase();
+  try {
+    const map: Record<string, string> = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (map[mapKey] && /^BK[A-Z0-9]{6,10}$/.test(map[mapKey])) return map[mapKey];
+    const code = 'BK' + Math.random().toString(36).slice(2, 10).toUpperCase();
+    localStorage.setItem(KEY, JSON.stringify({ ...map, [mapKey]: code }));
+    return code;
+  } catch {
+    return 'BK' + Math.random().toString(36).slice(2, 10).toUpperCase();
+  }
+}
+
 export default function ReferralDashboard() {
   const { currentUser } = useApp();
   const [stats, setStats] = useState<ReferralStats | null>(null);
@@ -28,32 +56,57 @@ export default function ReferralDashboard() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
 
+  const applyInviteLink = useCallback((code: string | null | undefined) => {
+    if (code) setInviteLink(`${window.location.origin}/auth?ref=${code}`);
+  }, []);
+
   const fetchStats = useCallback(async () => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/referral/stats/${currentUser.id}`);
+      const res = await fetch(`/api/referral/stats/${currentUser.id}?email=${encodeURIComponent(currentUser.email)}`);
       const data = await res.json();
       if (data.success) {
-        setStats(data);
-        if (data.code) {
-          const baseUrl = window.location.origin;
-          setInviteLink(`${baseUrl}/auth?ref=${data.code}`);
+        const serverCode: string | null = data.code || null;
+        // Show something immediately (stable local code), then make sure the
+        // server also has a persistent code so the link works across devices.
+        const localCode = serverCode || getOrCreateLocalReferralCode(currentUser.email);
+        setStats({ ...EMPTY_STATS, ...data, code: localCode });
+        applyInviteLink(localCode);
+        if (!serverCode) {
+          try {
+            const genRes = await fetch('/api/referral/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: currentUser.id, email: currentUser.email }),
+            });
+            const genData = await genRes.json();
+            if (genData.success && genData.code) {
+              setStats(prev => (prev ? { ...prev, code: genData.code } : prev));
+              applyInviteLink(genData.code);
+            }
+          } catch { /* offline — local code stays */ }
         }
+        return;
       }
     } catch (err) {
-      console.error('Failed to fetch referral stats:', err);
-    } finally {
-      setLoading(false);
+      console.warn('Referral API unavailable — using local fallback code:', err);
     }
-  }, [currentUser]);
+    const localCode = getOrCreateLocalReferralCode(currentUser.email);
+    setStats({ ...EMPTY_STATS, code: localCode });
+    applyInviteLink(localCode);
+  }, [currentUser, applyInviteLink]);
 
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
 
-  // Auto-generate referral code for lifetime users who don't have one
+  // Auto-generate referral code for lifetime users who don't have one yet.
+  // The local fallback guarantees a code exists even if this request fails.
   useEffect(() => {
     if (!loading && currentUser && !stats?.code && currentUser.plan === 'lifetime') {
+      const localCode = getOrCreateLocalReferralCode(currentUser.email);
+      setStats(prev => (prev ? { ...prev, code: prev.code || localCode } : { ...EMPTY_STATS, code: localCode }));
+      applyInviteLink(localCode);
       (async () => {
         try {
           const res = await fetch('/api/referral/generate', {
@@ -62,17 +115,16 @@ export default function ReferralDashboard() {
             body: JSON.stringify({ userId: currentUser.id, email: currentUser.email }),
           });
           const data = await res.json();
-          if (data.success) {
-            const baseUrl = window.location.origin;
-            setInviteLink(`${baseUrl}/auth?ref=${data.code}`);
+          if (data.success && data.code) {
+            applyInviteLink(data.code);
             await fetchStats();
           }
         } catch (err) {
-          console.error('Failed to auto-generate referral link:', err);
+          console.warn('Auto-generate skipped (API unavailable), local code active:', err);
         }
       })();
     }
-  }, [loading, currentUser, stats?.code, fetchStats]);
+  }, [loading, currentUser, stats?.code, fetchStats, applyInviteLink]);
 
   const handleGenerateLink = async () => {
     if (!currentUser) return;
@@ -84,13 +136,15 @@ export default function ReferralDashboard() {
         body: JSON.stringify({ userId: currentUser.id, email: currentUser.email }),
       });
       const data = await res.json();
-      if (data.success) {
-        const baseUrl = window.location.origin;
-        setInviteLink(`${baseUrl}/auth?ref=${data.code}`);
+      if (data.success && data.code) {
+        applyInviteLink(data.code);
         await fetchStats();
+      } else {
+        applyInviteLink(getOrCreateLocalReferralCode(currentUser.email));
       }
-    } catch (err) {
-      console.error('Failed to generate referral link:', err);
+    } catch {
+      // API unreachable (offline/static host) — show the stable local code.
+      applyInviteLink(getOrCreateLocalReferralCode(currentUser.email));
     } finally {
       setGenerating(false);
     }
@@ -235,7 +289,7 @@ export default function ReferralDashboard() {
               <DollarSign className="h-4 w-4 text-amber-600" />
             </div>
             <div className="mt-1 text-xl font-extrabold text-amber-600 dark:text-amber-400">
-              Rp {(stats.totalRewardEarned).toLocaleString('id-ID')}
+              Rp {Number(stats.totalRewardEarned || 0).toLocaleString('id-ID')}
             </div>
           </div>
 
@@ -245,7 +299,7 @@ export default function ReferralDashboard() {
               <Clock className="h-4 w-4 text-purple-600" />
             </div>
             <div className="mt-1 text-xl font-extrabold text-purple-600 dark:text-purple-400">
-              Rp {(stats.pendingReward).toLocaleString('id-ID')}
+              Rp {Number(stats.pendingReward || 0).toLocaleString('id-ID')}
             </div>
           </div>
         </div>
@@ -286,7 +340,7 @@ export default function ReferralDashboard() {
                   </span>
                   {ref.status === 'converted' && (
                     <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                      +Rp {(ref.rewardAmount || 30000).toLocaleString('id-ID')}
+                      +Rp {Number(ref.rewardAmount || 30000).toLocaleString('id-ID')}
                     </span>
                   )}
                 </div>

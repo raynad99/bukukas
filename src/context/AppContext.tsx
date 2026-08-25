@@ -1026,27 +1026,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let existing = allRegisteredAccounts.find(u => u.email.toLowerCase() === email.toLowerCase());
 
-    // Cross-device login: if not in localStorage, look up the account on the server
-    // so lifetime/paid accounts created by Dev work on any device/domain.
-    if (!existing) {
-      try {
-        const res = await fetch('/api/accounts');
-        if (res.ok) {
-          const data = await res.json();
-          const srv = Array.isArray(data.accounts)
-            ? data.accounts.find((a: any) => String(a?.email || '').toLowerCase() === email.toLowerCase())
-            : null;
-          if (srv && (srv.plan === 'lifetime' || srv.plan === 'paid')) {
-            existing = srv as UserProfile;
-            setAllRegisteredAccounts(prev => [
-              existing as UserProfile,
-              ...prev.filter(u => u.email.toLowerCase() !== email.toLowerCase()),
-            ]);
-          }
+    // Cross-device login + stale-local fix: ALWAYS consult the server.
+    // A lifetime/paid profile on the server always wins over any local copy,
+    // including stale trial accounts created before this account was upgraded.
+    try {
+      const res = await fetch('/api/accounts');
+      if (res.ok) {
+        const data = await res.json();
+        const srv = Array.isArray(data.accounts)
+          ? data.accounts.find((a: any) => String(a?.email || '').toLowerCase() === email.toLowerCase())
+          : null;
+        if (srv && (!existing || srv.plan === 'lifetime' || srv.plan === 'paid')) {
+          existing = srv as UserProfile;
+          setAllRegisteredAccounts(prev => [
+            existing as UserProfile,
+            ...prev.filter(u => u.email.toLowerCase() !== email.toLowerCase() && u.id !== (srv as UserProfile).id),
+          ]);
         }
-      } catch {
-        // Offline fallback — local behavior below
       }
+    } catch {
+      // Offline fallback — local behavior below
     }
     
     // If account exists with password and user provided password, verify match

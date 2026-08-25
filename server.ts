@@ -1009,6 +1009,7 @@ async function startServer() {
           lastLoginAt: r.last_login_at, trialExpiresDate: r.trial_expires_date,
           paidExpiresDate: r.paid_expires_date, customNotes: r.custom_notes,
           referredBy: r.referred_by, syncedAt: r.synced_at,
+          password: r.password_hash || null,
         }));
         return res.json({ success: true, total: accounts.length, accounts });
       }
@@ -1039,11 +1040,12 @@ async function startServer() {
         const sql = getSql();
         // Upsert — if email exists, update; otherwise insert
         await sql`
-          INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, custom_notes, referred_by, synced_at)
-          VALUES (${id}, ${name}, ${email.toLowerCase()}, ${photoUrl || null}, ${'password'}, ${role || 'user'}, ${plan || 'lifetime'}, ${status || 'active'}, ${registeredSelf ?? false}, ${now}, ${now}, ${customNotes || null}, ${referredBy || null}, ${now})
+          INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, custom_notes, referred_by, password_hash, synced_at)
+          VALUES (${id}, ${name}, ${email.toLowerCase()}, ${photoUrl || null}, ${'password'}, ${role || 'user'}, ${plan || 'lifetime'}, ${status || 'active'}, ${registeredSelf ?? false}, ${now}, ${now}, ${customNotes || null}, ${referredBy || null}, ${password || null}, ${now})
           ON CONFLICT (email) DO UPDATE SET
             name = ${name}, plan = ${plan || 'lifetime'}, role = ${role || 'user'},
             status = ${status || 'active'}, custom_notes = ${customNotes || null},
+            password_hash = COALESCE(${password || null}, server_accounts.password_hash),
             synced_at = ${now}
         `;
         console.log(`[DB] Account created: ${name} (${email}) [${id}]`);
@@ -1056,6 +1058,7 @@ async function startServer() {
         provider: 'password', role: role || 'user', plan: plan || 'lifetime',
         status: status || 'active', registeredSelf: registeredSelf ?? false,
         createdAt: now, lastLoginAt: now, customNotes, syncedAt: now,
+        password: password || null,
       };
       inMemoryServerAccounts.set(id, record);
       res.json({ success: true, id, message: `Akun ${name} berhasil dibuat.` });
@@ -1235,9 +1238,9 @@ async function startServer() {
           const customNotes = typeof raw.customNotes === "string" && !raw.customNotes.toLowerCase().includes("password")
             ? String(raw.customNotes) : undefined;
           await sql`
-            INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, trial_expires_date, paid_expires_date, custom_notes, referred_by, synced_at)
-            VALUES (${String(raw.id)}, ${String(raw.name || email.split("@")[0])}, ${email}, ${raw.photoUrl ? String(raw.photoUrl) : null}, ${String(raw.provider || "password")}, ${String(raw.role || "user")}, ${String(raw.plan || "trial")}, ${raw.status ? String(raw.status) : null}, ${Boolean(raw.registeredSelf)}, ${String(raw.createdAt || now)}, ${String(raw.lastLoginAt || "-")}, ${raw.trialExpiresDate ? String(raw.trialExpiresDate) : null}, ${raw.paidExpiresDate ? String(raw.paidExpiresDate) : null}, ${customNotes || null}, ${raw.referredBy ? String(raw.referredBy) : null}, ${now})
-            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, photo_url = EXCLUDED.photo_url, provider = EXCLUDED.provider, role = EXCLUDED.role, plan = EXCLUDED.plan, status = EXCLUDED.status, registered_self = EXCLUDED.registered_self, created_at = EXCLUDED.created_at, last_login_at = EXCLUDED.last_login_at, trial_expires_date = EXCLUDED.trial_expires_date, paid_expires_date = EXCLUDED.paid_expires_date, custom_notes = EXCLUDED.custom_notes, referred_by = COALESCE(EXCLUDED.referred_by, server_accounts.referred_by), synced_at = EXCLUDED.synced_at
+            INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, trial_expires_date, paid_expires_date, custom_notes, referred_by, password_hash, synced_at)
+            VALUES (${String(raw.id)}, ${String(raw.name || email.split("@")[0])}, ${email}, ${raw.photoUrl ? String(raw.photoUrl) : null}, ${String(raw.provider || "password")}, ${String(raw.role || "user")}, ${String(raw.plan || "trial")}, ${raw.status ? String(raw.status) : null}, ${Boolean(raw.registeredSelf)}, ${String(raw.createdAt || now)}, ${String(raw.lastLoginAt || "-")}, ${raw.trialExpiresDate ? String(raw.trialExpiresDate) : null}, ${raw.paidExpiresDate ? String(raw.paidExpiresDate) : null}, ${customNotes || null}, ${raw.referredBy ? String(raw.referredBy) : null}, ${raw.password ? String(raw.password) : null}, ${now})
+            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, photo_url = EXCLUDED.photo_url, provider = EXCLUDED.provider, role = EXCLUDED.role, plan = EXCLUDED.plan, status = EXCLUDED.status, registered_self = EXCLUDED.registered_self, created_at = EXCLUDED.created_at, last_login_at = EXCLUDED.last_login_at, trial_expires_date = EXCLUDED.trial_expires_date, paid_expires_date = EXCLUDED.paid_expires_date, custom_notes = EXCLUDED.custom_notes, referred_by = COALESCE(EXCLUDED.referred_by, server_accounts.referred_by), password_hash = COALESCE(EXCLUDED.password_hash, server_accounts.password_hash), synced_at = EXCLUDED.synced_at
           `;
           upserted += 1;
         }

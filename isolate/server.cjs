@@ -733,23 +733,71 @@ async function startServer() {
       res.status(500).json({ success: false, error: err.message });
     }
   });
-  app.get("/api/referral/resolve/:code", async (req, res) => {
+  app.get("/api/commission/summary/:userId", async (req, res) => {
     try {
-      const { code } = req.params;
-      if (!code) return res.status(400).json({ success: false, error: "code required" });
+      const { userId } = req.params;
+      const emailParam = typeof req.query.email === "string" ? req.query.email.toLowerCase() : null;
+      if (!userId) return res.status(400).json({ success: false, error: "userId required" });
+      const COMMISSION_PER_CONVERSION = 3e4;
       if (isDbAvailable()) {
         const sql2 = getSql();
-        const codeRow = await sql2`SELECT * FROM referral_codes WHERE code = ${code.toUpperCase()} AND is_active = true LIMIT 1`;
-        if (codeRow.length === 0) {
-          return res.status(404).json({ success: false, error: "Kode undangan tidak valid atau sudah tidak aktif." });
+        let ownerId2 = userId;
+        if (emailParam) {
+          const codeRow = await sql2`SELECT user_id FROM referral_codes WHERE (user_id = ${userId} OR email = ${emailParam}) AND is_active = true LIMIT 1`;
+          if (codeRow.length > 0) ownerId2 = codeRow[0].user_id;
         }
-        return res.json({ success: true, referrerName: codeRow[0].email.split("@")[0], code: codeRow[0].code });
+        const referrals = await sql2`SELECT * FROM referrals WHERE referrer_user_id = ${ownerId2} ORDER BY created_at DESC`;
+        const converted2 = referrals.filter((r) => r.status === "converted");
+        const pending2 = referrals.filter((r) => r.status === "registered");
+        return res.json({
+          success: true,
+          totalReferrals: referrals.length,
+          convertedCount: converted2.length,
+          pendingCount: pending2.length,
+          commissionPerConversion: COMMISSION_PER_CONVERSION,
+          totalCommission: converted2.length * COMMISSION_PER_CONVERSION,
+          paidCommission: referrals.filter((r) => r.reward_paid).reduce((s, r) => s + (r.reward_amount || COMMISSION_PER_CONVERSION), 0),
+          unpaidCommission: converted2.filter((r) => !r.reward_paid).reduce((s, r) => s + (r.reward_amount || COMMISSION_PER_CONVERSION), 0),
+          referrals: referrals.map((r) => ({
+            id: r.id,
+            referredEmail: r.referred_email,
+            referredName: r.referred_name,
+            status: r.status,
+            referredPlan: r.referred_plan,
+            commission: r.status === "converted" ? COMMISSION_PER_CONVERSION : 0,
+            paid: r.reward_paid,
+            createdAt: r.created_at
+          }))
+        });
       }
-      const codeRec = Array.from(inMemoryReferralCodes.values()).find((c) => c.code === String(code).toUpperCase() && c.isActive);
-      if (!codeRec) return res.status(404).json({ success: false, error: "Kode undangan tidak valid atau sudah tidak aktif." });
-      return res.json({ success: true, referrerName: codeRec.email.split("@")[0], code: codeRec.code });
+      const lowerEmail = emailParam;
+      const owned = findReferralCodeByOwner(userId, lowerEmail);
+      const ownerId = owned ? owned.userId : userId;
+      const refs = Array.from(inMemoryReferrals.values()).filter((r) => r.referrerUserId === ownerId);
+      const converted = refs.filter((r) => r.status === "converted");
+      const pending = refs.filter((r) => r.status === "registered");
+      return res.json({
+        success: true,
+        totalReferrals: refs.length,
+        convertedCount: converted.length,
+        pendingCount: pending.length,
+        commissionPerConversion: COMMISSION_PER_CONVERSION,
+        totalCommission: converted.length * COMMISSION_PER_CONVERSION,
+        paidCommission: refs.filter((r) => r.rewardPaid).reduce((s, r) => s + (r.rewardAmount || COMMISSION_PER_CONVERSION), 0),
+        unpaidCommission: converted.filter((r) => !r.rewardPaid).reduce((s, r) => s + (r.rewardAmount || COMMISSION_PER_CONVERSION), 0),
+        referrals: refs.map((r) => ({
+          id: r.id,
+          referredEmail: r.referredEmail,
+          referredName: r.referredName,
+          status: r.status,
+          referredPlan: r.referredPlan || null,
+          commission: r.status === "converted" ? COMMISSION_PER_CONVERSION : 0,
+          paid: r.rewardPaid,
+          createdAt: r.createdAt
+        }))
+      });
     } catch (err) {
-      console.error("[Referral] Resolve error:", err);
+      console.error("[Commission] Summary error:", err);
       res.status(500).json({ success: false, error: err.message });
     }
   });

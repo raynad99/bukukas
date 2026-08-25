@@ -70,6 +70,7 @@ export const DevPortalView: React.FC = () => {
 
   const isAdmin = currentUser?.role === 'admin';
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'crypto' | 'mailbox' | 'referral' | 'sellers'>(isAdmin ? 'overview' : 'referral');
+  const [showPlanSelector] = useState(isAdmin);
   const [systemHealth, setSystemHealth] = useState<any>(null);
   const [isHealthLoading, setIsHealthLoading] = useState(false);
   const [userFilter, setUserFilter] = useState<'all' | 'trial' | 'expired' | 'lifetime' | 'paid' | 'self'>('all');
@@ -81,7 +82,7 @@ export const DevPortalView: React.FC = () => {
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserPassword, setNewUserPassword] = useState('Median1986');
+  const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('user');
   const [newUserPlan, setNewUserPlan] = useState<SubscriptionPlan>('lifetime');
   const [newUserNotes, setNewUserNotes] = useState('');
@@ -142,7 +143,7 @@ export const DevPortalView: React.FC = () => {
   const handleCopyPassword = (userId: string, pass: string) => {
     navigator.clipboard.writeText(pass);
     setCopiedPassUserId(userId);
-    addNotification('success', 'Kata Sandi Tersalin 🔑', `Kata sandi (${pass}) berhasil disalin.`);
+    addNotification('success', 'Kata Sandi Tersalin 🔑', `Kata sandi berhasil disalin ke clipboard.`);
     setTimeout(() => setCopiedPassUserId(null), 2000);
   };
 
@@ -150,7 +151,7 @@ export const DevPortalView: React.FC = () => {
     setEditingUserId(user.id);
     setEditUserName(user.name);
     setEditUserEmail(user.email);
-    setEditUserPassword(user.password || 'Median1986');
+    setEditUserPassword(user.password || '');
     setEditUserRole(user.role || 'user');
     setEditUserPlan(user.plan || 'lifetime');
     setEditUserNotes(user.customNotes || '');
@@ -165,7 +166,7 @@ export const DevPortalView: React.FC = () => {
     updateAccountByDev(editingUserId, {
       name: editUserName.trim(),
       email: editUserEmail.trim(),
-      password: editUserPassword.trim() || 'Median1986',
+      password: editUserPassword.trim() || undefined as any,
       role: editUserRole,
       plan: editUserPlan,
       customNotes: editUserNotes.trim(),
@@ -188,8 +189,11 @@ export const DevPortalView: React.FC = () => {
     addNotification('info', 'Sandi Acak Dibuat', `Kata sandi otomatis: ${pass}`);
   };
 
-  // Filtered Users
+  // Filtered Users - non-admin only sees their own downline
   const filteredUsers = allRegisteredAccounts.filter(u => {
+    // Non-admin: only show downline (accounts referred by current user)
+    if (!isAdmin && u.referredBy !== currentUser?.email && u.id !== currentUser?.id) return false;
+
     // Search match
     const searchMatch =
       u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -235,15 +239,15 @@ export const DevPortalView: React.FC = () => {
     addNewLifetimeAccountByDev({
       name: newUserName.trim(),
       email: newUserEmail.trim(),
-      password: newUserPassword.trim() || 'Median1986',
+      password: newUserPassword.trim() || undefined as any,
       role: newUserRole,
-      plan: newUserPlan,
-      customNotes: newUserNotes.trim() || `Akun ${newUserPlan.toUpperCase()} ditambahkan oleh Pengembang`,
+      plan: isAdmin ? newUserPlan : 'trial',
+      customNotes: newUserNotes.trim() || `Akun ${isAdmin ? newUserPlan.toUpperCase() : 'TRIAL'} ditambahkan oleh ${currentUser?.name || 'Upline'}`,
     });
 
     setNewUserName('');
     setNewUserEmail('');
-    setNewUserPassword('Median1986');
+    setNewUserPassword('');
     setNewUserRole('user');
     setNewUserPlan('lifetime');
     setNewUserNotes('');
@@ -324,7 +328,7 @@ export const DevPortalView: React.FC = () => {
               className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-3 text-xs font-black text-slate-950 shadow-lg shadow-amber-500/20 hover:brightness-110 active:scale-95 transition"
             >
               <UserPlus className="h-4 w-4" />
-              <span>+ Tambah Akun Lifetime</span>
+              <span>{isAdmin ? '+ Tambah Akun' : '+ Daftarkan Trial'}</span>
             </button>
           </div>
         </div>
@@ -343,17 +347,31 @@ export const DevPortalView: React.FC = () => {
             <span>System Overview</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
-              activeTab === 'users'
-                ? 'bg-white text-slate-900 shadow-md'
-                : 'text-slate-300 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <Users className="h-4 w-4" />
-            <span>Manajemen Akun & Lisensi ({totalUsersCount})</span>
-          </button>          <button
+          {isAdmin ? (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+                activeTab === 'users'
+                  ? 'bg-white text-slate-900 shadow-md'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              <span>Seluruh Akun ({totalUsersCount})</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+                activeTab === 'users'
+                  ? 'bg-white text-slate-900 shadow-md'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              <span>Downline Saya ({allRegisteredAccounts.filter(a => a.referredBy === currentUser?.email).length})</span>
+            </button>
+          )}          <button
             onClick={() => setActiveTab('crypto')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition relative ${
               activeTab === 'crypto'
@@ -412,7 +430,8 @@ export const DevPortalView: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
+      {/* Summary KPI Cards - Admin only */}
+      {isAdmin && (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
@@ -459,6 +478,7 @@ export const DevPortalView: React.FC = () => {
           <p className="text-[10px] text-emerald-700/80 dark:text-emerald-400">{unreadCount} belum dibaca</p>
         </div>
       </div>
+      )}
 
       {/* TAB 0: SYSTEM OVERVIEW / cPANEL */}
       {activeTab === 'overview' && (
@@ -625,7 +645,7 @@ export const DevPortalView: React.FC = () => {
           {/* User List Table / Cards */}
           <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
             <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider dark:border-slate-800 dark:bg-slate-950/40">
-              Daftar Seluruh Akun Pengguna Terdaftar ({filteredUsers.length})
+              {isAdmin ? 'Daftar Seluruh Akun Pengguna Terdaftar' : 'Downline / Akun yang Anda Daftarkan'} ({filteredUsers.length})
             </div>
 
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -704,11 +724,11 @@ export const DevPortalView: React.FC = () => {
                           <div className="mt-2.5 flex items-center gap-2">
                             <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                               <Lock className="h-3 w-3 text-slate-400" />
-                              <span>Sandi: {user.password || 'Median1986'}</span>
+                              <span>Sandi: {'••••••••'}</span>
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleCopyPassword(user.id, user.password || 'Median1986')}
+                              onClick={() => handleCopyPassword(user.id, user.password || '')}
                               className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                               title="Salin kata sandi akun ini"
                             >
@@ -1411,11 +1431,12 @@ export const DevPortalView: React.FC = () => {
                   </button>
                 </div>
                 <p className="mt-1 text-[10px] text-slate-400">
-                  Password bawaan: <code className="font-bold text-slate-600 dark:text-slate-300">Median1986</code>
+                  Biarkan kosong untuk generate sandi otomatis oleh server.
                 </p>
               </div>
 
-              {/* Plan & Role Pickers */}
+              {/* Plan & Role Pickers - Admin only */}
+              {isAdmin && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -1446,6 +1467,12 @@ export const DevPortalView: React.FC = () => {
                   </select>
                 </div>
               </div>
+              )}
+              {!isAdmin && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-[11px] text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300">
+                Akun yang didaftarkan akan otomatis berstatus <strong>Trial 7 Hari</strong>. Hubungi admin untuk upgrade.
+              </div>
+              )}
 
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">

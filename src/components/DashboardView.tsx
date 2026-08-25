@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { Share2, Copy, Check, MessageCircle } from 'lucide-react';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -42,6 +43,74 @@ import { currencySymbols, formatCurrency } from '../i18n/translations';
 import { Currency } from '../types';
 import { convertCurrency, convertToIdr } from '../utils/exchangeRates';
 import { IconHelper } from './IconHelper';
+
+function PromoShareBanner() {
+  const { currentUser } = useApp();
+  const [code, setCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const KEY = 'finvault_referral_codes';
+    try {
+      const map: Record<string, string> = JSON.parse(localStorage.getItem(KEY) || '{}');
+      const localCode = map[currentUser.email.toLowerCase()];
+      if (localCode) { setCode(localCode); return; }
+    } catch {}
+    fetch(`/api/referral/stats/${currentUser.id}?email=${encodeURIComponent(currentUser.email)}`)
+      .then(r => r.json())
+      .then(d => { if (d.success && d.code) setCode(d.code); })
+      .catch(() => {});
+  }, [currentUser]);
+
+  const handleCopy = async () => {
+    if (!code) return;
+    const link = `${window.location.origin}/auth?ref=${code}`;
+    try { await navigator.clipboard.writeText(link); } catch {
+      const ta = document.createElement('textarea'); ta.value = link;
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShare = () => {
+    if (!code) return;
+    const link = `${window.location.origin}/auth?ref=${code}`;
+    const text = encodeURIComponent(`Hai! 👋
+
+Aku pakai BukuKas Pro untuk kelola keuangan. Yuk daftar gratis:
+${link}
+
+Paket Pro 1 tahun cuma Rp199rb! 🚀`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  if (!currentUser || !code) return null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-violet-200/80 bg-gradient-to-r from-violet-50 via-purple-50 to-fuchsia-50/80 p-3.5 text-slate-900 shadow-xs dark:border-violet-900/60 dark:from-violet-950/40 dark:via-purple-950/20 dark:to-fuchsia-950/40 dark:text-slate-100">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400">
+          <Share2 className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-xs font-bold text-violet-900 dark:text-violet-200">Promosikan BukuKas Pro</p>
+          <p className="text-[10px] text-violet-700 dark:text-violet-300">Share link Anda & dapatkan Rp30.000 per konversi</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button onClick={handleCopy} className="flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm transition hover:bg-violet-500 active:scale-95">
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? 'Tersalin!' : 'Salin Link'}
+        </button>
+        <button onClick={handleShare} className="flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm transition hover:bg-green-500 active:scale-95">
+          <MessageCircle className="h-3 w-3" /> Share
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export const DashboardView: React.FC = () => {
   const {
@@ -235,6 +304,9 @@ export const DashboardView: React.FC = () => {
 
   return (
     <div className="space-y-3 sm:space-y-4 md:space-y-6 pb-24 md:pb-12">
+      {/* Quick Promo Share Banner */}
+      <PromoShareBanner />
+
       {/* Month Picker Header */}
       <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center">
         <div>

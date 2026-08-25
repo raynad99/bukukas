@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { AddTransactionModal } from './components/AddTransactionModal';
 import { AiChatBot } from './components/AiChatBot';
+import SharePromoButton from './components/SharePromoButton';
 import { AuthView } from './components/AuthView';
 import { BillsView } from './components/BillsView';
 import { BottomNav } from './components/BottomNav';

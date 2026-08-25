@@ -59,6 +59,8 @@ export async function createTablesIfNotExist(): Promise<void> {
         paid_expires_date TEXT,
         custom_notes TEXT,
         referred_by TEXT,
+        password_hash TEXT,
+        is_active BOOLEAN DEFAULT true,
         synced_at TEXT NOT NULL
       )
     `;
@@ -71,6 +73,11 @@ export async function createTablesIfNotExist(): Promise<void> {
     // Soft-delete flag: deleted accounts are hidden but kept to prevent re-sync from browser
     try {
       await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`;
+    } catch (e) { /* column already exists */ }
+
+    // Password column for cross-device login verification
+    try {
+      await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS password_hash TEXT`;
     } catch (e) { /* column already exists */ }
 
     await sql`

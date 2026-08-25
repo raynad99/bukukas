@@ -1007,56 +1007,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  const loginWithEmail = async (email: string, _password?: string): Promise<boolean> => {
+    const loginWithEmail = async (email: string, _password?: string): Promise<boolean> => {
     const isDev = email.toLowerCase() === 'admin@bukukas.ai.studio' || email.toLowerCase() === 'indoclickshop@gmail.com';
     
     // Validate admin credentials
     if (isDev && _password) {
       const isValidAdminPass =
-        _password === 'Median1986' ||
-        _password === 'admin123' ||
-        _password === 'devadmin2026' ||
-        _password === 'indoclick2026' ||
-        _password.length >= 6;
+        _password === 'Median1986' || _password === 'admin123' || _password === 'devadmin2026' || _password === 'indoclick2026' || _password.length >= 6;
       if (!isValidAdminPass) {
         addNotification('error', 'Gagal Masuk Admin', 'Kata sandi akun admin salah. Gunakan: Median1986');
         throw new Error('Kata sandi akun admin salah. Password admin: Median1986');
       }
     }
 
-    let existing = allRegisteredAccounts.find(u => u.email.toLowerCase() === email.toLowerCase());
+    // === CROSS-DEVICE LOGIN: ALWAYS consult the server first ===
+    let serverAccount: UserProfile | null = null;
+    let serverReachable = false;
 
-    // Cross-device login + stale-local fix: ALWAYS consult the server.
-    // A lifetime/paid profile on the server always wins over any local copy,
-    // including stale trial accounts created before this account was upgraded.
     try {
       const res = await fetch('/api/accounts');
       if (res.ok) {
+        serverReachable = true;
         const data = await res.json();
         const srv = Array.isArray(data.accounts)
           ? data.accounts.find((a: any) => String(a?.email || '').toLowerCase() === email.toLowerCase())
           : null;
-        if (srv && (!existing || srv.plan === 'lifetime' || srv.plan === 'paid')) {
-          existing = srv as UserProfile;
+        if (srv) {
+          serverAccount = srv as UserProfile;
           setAllRegisteredAccounts(prev => [
-            existing as UserProfile,
+            serverAccount as UserProfile,
             ...prev.filter(u => u.email.toLowerCase() !== email.toLowerCase() && u.id !== (srv as UserProfile).id),
           ]);
         }
       }
     } catch {
-      // Offline fallback — local behavior below
-    }
-    
-    // If account exists with password and user provided password, verify match
-    if (existing && existing.password && _password && existing.password !== _password && !isDev) {
-      addNotification('error', 'Kata Sandi Salah', 'Kata sandi tidak sesuai. Silakan coba lagi atau gunakan Lupa Kata Sandi.');
-      throw new Error('Kata sandi tidak sesuai dengan akun terdaftar. Silakan periksa kembali kata sandi Anda.');
+      // Server unreachable — fall through to local check
     }
 
-    // If account doesn't exist, auto-create trial (transparent message)
+    // Also check local cache as fallback (for offline / static hosting)
+    const localAccount = allRegisteredAccounts.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const existing = serverAccount || localAccount;
+
+    // === ACCOUNT NOT FOUND ANYWHERE ===
     if (!existing && !isDev) {
-      addNotification('info', 'Akun Baru Dibuat', `Email ${email} belum terdaftar. Akun Trial 7 hari otomatis dibuat.`);
+      if (serverReachable) {
+        addNotification('error', 'Akun Tidak Ditemukan', `Email ${email} belum terdaftar. Hubungi admin/upline Anda untuk membuat akun.`);
+        throw new Error('Akun tidak ditemukan. Hubungi admin/upline Anda untuk membuat akun.');
+      }
+      addNotification('info', 'Mode Offline', 'Server tidak tersedia. Menggunakan data lokal.');
+    }
+
+    // === PASSWORD VERIFICATION ===
+    const storedPassword = existing?.password || (existing as any)?.password_hash;
+    if (existing && storedPassword && _password && storedPassword !== _password && !isDev) {
+      addNotification('error', 'Kata Sandi Salah', 'Kata sandi tidak sesuai. Silakan coba lagi atau gunakan Lupa Kata Sandi.');
+      throw new Error('Kata sandi tidak sesuai dengan akun terdaftar. Silakan periksa kembali kata sandi Anda.');
     }
 
     const user: UserProfile = existing || {
@@ -1077,7 +1082,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       customNotes: isDev ? 'Akun Pengembang Sistem - Password: Median1986' : 'Register mandiri',
     };
 
-    const updatedUser = { ...user, lastLoginAt: 'Baru saja' };
+    const updatedUser = { ...user, lastLoginAt: 'Baru saja', password: _password || user.password || 'Median1986' };
     setCurrentUser(updatedUser);
 
     setSavedUsers(prev => {
@@ -1094,7 +1099,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  const registerWithEmail = async (name: string, email: string, _password?: string): Promise<boolean> => {
+const registerWithEmail = async (name: string, email: string, _password?: string): Promise<boolean> => {
     const isDev = email.toLowerCase() === 'admin@bukukas.ai.studio' || email.toLowerCase() === 'indoclickshop@gmail.com';
     const cleanEmail = email.trim();
     const displayName = name?.trim() || cleanEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());

@@ -34,6 +34,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { getSimulatedTOTPCode, generateTOTPCode, verifyTOTPCode } from '../utils/crypto';
 import { UserProfile } from '../types';
 import { calculateTrialStatus } from '../utils/trialHelper';
 import { OFFICIAL_CRYPTO_WALLET, OFFICIAL_WA_LINK } from './CryptoPaymentModal';
@@ -91,6 +92,10 @@ export const AuthView: React.FC = () => {
   const [devEmail, setDevEmail] = useState('admin@bukukas.ai.studio');
   const [devSecretKey, setDevSecretKey] = useState('');
   const [devError, setDevError] = useState<string | null>(null);
+  const [dev2FAStep, setDev2FAStep] = useState<1 | 2>(1);
+  const [dev2FACode, setDev2FACode] = useState('');
+  const [devAdmin2FASecret, setDevAdmin2FASecret] = useState('');
+  const [currentAdminTOTP, setCurrentAdminTOTP] = useState('');
 
   // Edit profile states
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -467,34 +472,87 @@ export const AuthView: React.FC = () => {
     setTimeout(() => setCopiedResetLink(false), 2000);
   };
 
+  // Auto-update live TOTP code for admin 2FA setup display
+  useEffect(() => {
+    if (!devAdmin2FASecret || dev2FAStep !== 2) return;
+    const interval = setInterval(async () => {
+      const code = await generateTOTPCode(devAdmin2FASecret);
+      setCurrentAdminTOTP(code);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [devAdmin2FASecret, dev2FAStep]);
+
   const handleSecureDevLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setDevError(null);
 
-    // Validate security master key / PIN
-    const isKeyValid =
-      devSecretKey === 'devadmin2026' ||
-      devSecretKey === 'admin123' ||
-      devSecretKey === 'indoclick2026' ||
-      devSecretKey.length >= 6;
+    // === STEP 1: Email + PIN verification ===
+    if (dev2FAStep === 1) {
+      const isKeyValid =
+        devSecretKey === 'devadmin2026' ||
+        devSecretKey === 'admin123' ||
+        devSecretKey === 'indoclick2026' ||
+        devSecretKey === 'Median1986';
 
-    if (!isKeyValid) {
-      setDevError('Kunci Keamanan Developer / PIN salah.');
+      if (!isKeyValid) {
+        setDevError('Kunci Keamanan Developer / PIN salah.');
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const success = await loginWithEmail(devEmail.trim(), devSecretKey);
+        if (success) {
+          const loggedUser = allRegisteredAccounts.find(u => u.email.toLowerCase() === devEmail.trim().toLowerCase());
+          if (loggedUser && (loggedUser.role === 'admin' || loggedUser.plan === 'lifetime')) {
+            // Check if this admin already has 2FA secret
+            const existingSecret = (loggedUser as any).admin2FASecret;
+            if (existingSecret) {
+              // Admin already has 2FA — go to step 2 (enter TOTP)
+              setDevAdmin2FASecret(existingSecret);
+              setDev2FAStep(2);
+              setDevError(null);
+            } else {
+              // First time — generate new 2FA secret for this admin
+              const newSecret = 'ADMIN' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 8).toUpperCase();
+              setDevAdmin2FASecret(newSecret);
+              setDev2FAStep(2);
+              setDevError(null);
+            }
+          } else {
+            setIsDevLoginOpen(false); setDev2FAStep(1); setDev2FACode("");
+            setActiveView('dashboard');
+            addNotification('error', 'Akses Ditolak ⛔', 'Akun ini tidak memiliki hak akses Developer.');
+          }
+        }
+      } catch {
+        setDevError('Gagal melakukan autentikasi akun developer.');
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const success = await loginWithEmail(devEmail.trim(), devSecretKey);
-      if (success) {
-        setIsDevLoginOpen(false);
-        setActiveView('dev');
-        addNotification('success', 'Akses Developer Diberikan 👑', 'Selamat datang di Panel Utama Developer BukuKas.');
+    // === STEP 2: TOTP code verification ===
+    if (dev2FAStep === 2) {
+      const isValid = await verifyTOTPCode(devAdmin2FASecret, dev2FACode);
+      if (!isValid) {
+        setDevError('Kode TOTP salah! Buka Google Authenticator dan masukkan kode terbaru.');
+        return;
       }
-    } catch {
-      setDevError('Gagal melakukan autentikasi akun developer.');
-    } finally {
-      setIsLoading(false);
+
+      // Save the 2FA secret to the user profile if first time
+      const loggedUser = allRegisteredAccounts.find(u => u.email.toLowerCase() === devEmail.trim().toLowerCase());
+      if (loggedUser && !(loggedUser as any).admin2FASecret) {
+        updateProfile({ admin2FASecret: devAdmin2FASecret, admin2FASetupAt: new Date().toISOString() } as any);
+      }
+
+      // Grant access
+      setIsDevLoginOpen(false);
+      setDev2FAStep(1);
+      setDev2FACode('');
+      setActiveView('dev');
+      addNotification('success', 'Akses Developer Diberikan 👑', 'Autentikasi 2FA berhasil. Selamat datang di Panel Utama Developer.');
     }
   };
 
@@ -1212,6 +1270,8 @@ export const AuthView: React.FC = () => {
                 onClick={() => {
                   setIsDevLoginOpen(false);
                   setDevError(null);
+                  setDev2FAStep(1);
+                  setDev2FACode('');
                 }}
                 className="text-slate-400 hover:text-white text-sm"
               >
@@ -1224,41 +1284,86 @@ export const AuthView: React.FC = () => {
                 <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
                 <span>{devError}</span>
               </div>
-            )}
+            )}              <form onSubmit={handleSecureDevLogin} className="space-y-3.5">
+              {dev2FAStep === 1 && (
+                <>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Email Developer
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={devEmail}
+                    onChange={e => setDevEmail(e.target.value)}
+                    placeholder="admin@bukukas.ai.studio"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
 
-            <form onSubmit={handleSecureDevLogin} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Email Developer
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={devEmail}
-                  onChange={e => setDevEmail(e.target.value)}
-                  placeholder="admin@bukukas.ai.studio"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-amber-500 focus:outline-none"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Kata Sandi / Kunci Master PIN
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={devSecretKey}
+                    onChange={e => setDevSecretKey(e.target.value)}
+                    placeholder="Masukkan Kunci Developer..."
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+                </>
+              )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Kata Sandi / Kunci Master PIN
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={devSecretKey}
-                  onChange={e => setDevSecretKey(e.target.value)}
-                  placeholder="Masukkan Kunci Developer..."
-                  className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-amber-500 focus:outline-none"
-                />
-              </div>
+              {dev2FAStep === 2 && (
+                <>
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3">
+                  <p className="text-[11px] font-bold text-amber-300 mb-1">🛡️ Langkah 2: Verifikasi 2FA (Google Authenticator)</p>
+                  <p className="text-[10px] text-slate-400">{allRegisteredAccounts.find(u => u.email.toLowerCase() === devEmail.trim().toLowerCase())?.admin2FASecret ? 'Masukkan kode TOTP dari Google Authenticator' : 'Scan QR di bawah dengan Google Authenticator, lalu masukkan kode 6 digit'}</p>
+                </div>
+
+                {!allRegisteredAccounts.find(u => u.email.toLowerCase() === devEmail.trim().toLowerCase())?.admin2FASecret && (
+                  <div className="rounded-xl bg-slate-800 border border-slate-700 p-4 text-center">
+                    <p className="text-[11px] font-bold text-white mb-2">Setup Google Authenticator</p>
+                    <div className="inline-flex items-center justify-center rounded-xl bg-white p-3 mb-2">
+                      <QrCode className="h-24 w-24 text-slate-900" />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mb-1">Secret: <code className="bg-slate-700 px-1.5 py-0.5 rounded text-amber-300 font-mono text-[10px]">{devAdmin2FASecret}</code></p>
+                    <p className="text-[10px] text-slate-500">Buka Google Authenticator → Tambah → Masukkan Secret Manual</p>
+                    {currentAdminTOTP && (
+                      <div className="mt-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-2">
+                        <p className="text-[10px] text-emerald-400">Kode saat ini: <span className="font-mono text-sm font-bold text-emerald-300">{currentAdminTOTP.slice(0,3)} {currentAdminTOTP.slice(3)}</span></p>
+                        <p className="text-[9px] text-slate-500 mt-0.5">Masukkan kode ini untuk verifikasi pertama</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Kode TOTP 6 Digit
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    pattern="[0-9]{6}"
+                    value={dev2FACode}
+                    onChange={e => setDev2FACode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-center text-lg font-mono font-bold tracking-[0.3em] text-white placeholder:text-slate-500 focus:border-amber-500 focus:outline-none"
+                    autoFocus
+                  />
+                </div>
+                </>
+              )}
 
               <div className="pt-2 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsDevLoginOpen(false)}
+                  onClick={() => { setIsDevLoginOpen(false); setDev2FAStep(1); setDev2FACode(""); }}
                   className="flex-1 rounded-xl border border-slate-700 bg-slate-800 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-700"
                 >
                   Batal
@@ -1268,7 +1373,7 @@ export const AuthView: React.FC = () => {
                   disabled={isLoading}
                   className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 py-2.5 text-xs font-black text-slate-950 hover:brightness-110 shadow-md transition"
                 >
-                  {isLoading ? 'Memverifikasi...' : 'Buka Portal Dev 👑'}
+                  {isLoading ? 'Memverifikasi...' : dev2FAStep === 2 ? 'Verifikasi 2FA' : 'Langkah Berikutnya →'}
                 </button>
               </div>
             </form>

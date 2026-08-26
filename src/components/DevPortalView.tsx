@@ -273,6 +273,26 @@ export const DevPortalView: React.FC = () => {
   const trialExpiredCount = allRegisteredAccounts.filter(u => calculateTrialStatus(u).isExpired).length;
   const lifetimeVipCount = allRegisteredAccounts.filter(u => calculateTrialStatus(u).isLifetime).length;
 
+  // SECURITY: Defense-in-depth — block non-admin/non-lifetime users from seeing any content
+  if (!currentUser || (currentUser.role !== 'admin' && currentUser.plan !== 'lifetime')) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 p-8 text-center">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 dark:border-rose-800 dark:bg-rose-950">
+          <h2 className="text-lg font-bold text-rose-800 dark:text-rose-200">⛔ Akses Ditolak</h2>
+          <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+            Halaman ini hanya dapat diakses oleh Admin / Developer dan akun Lifetime VIP.
+          </p>
+          <button
+            onClick={() => setActiveView('dashboard')}
+            className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500"
+          >
+            Kembali ke Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-24 md:pb-12">
       {/* Dev Header Banner */}

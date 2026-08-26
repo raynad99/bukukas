@@ -1015,10 +1015,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Validate admin credentials
     if (isDev && _password) {
       const isValidAdminPass =
-        _password === 'Median1986' || _password === 'admin123' || _password === 'devadmin2026' || _password === 'indoclick2026' || _password.length >= 6;
+        _password === 'Median1986' || _password === 'admin123' || _password === 'devadmin2026' || _password === 'indoclick2026';
       if (!isValidAdminPass) {
-        addNotification('error', 'Gagal Masuk Admin', 'Kata sandi akun admin salah. Gunakan: Median1986');
-        throw new Error('Kata sandi akun admin salah. Password admin: Median1986');
+        addNotification('error', 'Gagal Masuk Admin', 'Kata sandi akun admin salah.');
+        throw new Error('Kata sandi akun admin salah.');
       }
     }
 

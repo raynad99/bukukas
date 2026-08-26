@@ -56,6 +56,8 @@ export interface UserProfile {
   status?: 'active' | 'trial' | 'expired' | 'suspended';
   customNotes?: string;
   referredBy?: string;
+  admin2FASecret?: string;
+  admin2FASetupAt?: string;
   createdAt: string;
   lastLoginAt: string;
 }

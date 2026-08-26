@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertCircle,
   Bot,
@@ -40,6 +40,13 @@ const AppContent: React.FC = () => {
   // Seluruh navigasi fitur (sidebar, header, bottom nav) disembunyikan.
   const isGuest = !currentUser;
 
+  // SECURITY: Redirect away from dev view for unauthorized users
+  useEffect(() => {
+    if (activeView === 'dev' && currentUser && currentUser.role !== 'admin' && currentUser.plan !== 'lifetime') {
+      setActiveView('dashboard');
+    }
+  }, [activeView, currentUser, setActiveView]);
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 transition-colors duration-200 antialiased dark:bg-slate-950 dark:text-slate-100">
       {/* Lock screen overlay if locked */}
@@ -70,7 +77,7 @@ const AppContent: React.FC = () => {
             {activeView === 'loans' && <LoansView />}
             {activeView === 'categories' && <CategoriesView />}
             {activeView === 'reports' && <ReportsView />}
-            {activeView === 'dev' && ((currentUser?.role === 'admin' || currentUser?.plan === 'lifetime') ? <DevPortalView /> : <DashboardView />)}
+            {activeView === 'dev' && (currentUser?.role === 'admin' || currentUser?.plan === 'lifetime') && <DevPortalView />}
             {(activeView === 'security' || activeView === 'cloud' || activeView === 'settings') && <SecurityView />}
           </main>
         </div>

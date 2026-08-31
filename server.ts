@@ -1046,6 +1046,8 @@ async function startServer() {
           paidExpiresDate: r.paid_expires_date, customNotes: r.custom_notes,
           referredBy: r.referred_by, syncedAt: r.synced_at,
           password: r.password_hash || null,
+          admin2FASecret: r.admin_2fa_secret || null,
+          admin2FASetupAt: r.admin_2fa_setup_at || null,
         }));
         return res.json({ success: true, total: accounts.length, accounts });
       }
@@ -1275,9 +1277,9 @@ async function startServer() {
           const customNotes = typeof raw.customNotes === "string" && !raw.customNotes.toLowerCase().includes("password")
             ? String(raw.customNotes) : undefined;
           await sql`
-            INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, trial_expires_date, paid_expires_date, custom_notes, referred_by, password_hash, synced_at)
-            VALUES (${String(raw.id)}, ${String(raw.name || email.split("@")[0])}, ${email}, ${raw.photoUrl ? String(raw.photoUrl) : null}, ${String(raw.provider || "password")}, ${String(raw.role || "user")}, ${String(raw.plan || "trial")}, ${raw.status ? String(raw.status) : null}, ${Boolean(raw.registeredSelf)}, ${String(raw.createdAt || now)}, ${String(raw.lastLoginAt || "-")}, ${raw.trialExpiresDate ? String(raw.trialExpiresDate) : null}, ${raw.paidExpiresDate ? String(raw.paidExpiresDate) : null}, ${customNotes || null}, ${raw.referredBy ? String(raw.referredBy) : null}, ${raw.password ? String(raw.password) : null}, ${now})
-            ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, photo_url = EXCLUDED.photo_url, provider = EXCLUDED.provider, role = EXCLUDED.role, plan = EXCLUDED.plan, status = EXCLUDED.status, registered_self = EXCLUDED.registered_self, created_at = EXCLUDED.created_at, last_login_at = EXCLUDED.last_login_at, trial_expires_date = EXCLUDED.trial_expires_date, paid_expires_date = EXCLUDED.paid_expires_date, custom_notes = EXCLUDED.custom_notes, referred_by = COALESCE(EXCLUDED.referred_by, server_accounts.referred_by), password_hash = COALESCE(EXCLUDED.password_hash, server_accounts.password_hash), synced_at = EXCLUDED.synced_at
+            INSERT INTO server_accounts (id, name, email, photo_url, provider, role, plan, status, registered_self, created_at, last_login_at, trial_expires_date, paid_expires_date, custom_notes, referred_by, password_hash, admin_2fa_secret, admin_2fa_setup_at, synced_at)
+            VALUES (${String(raw.id)}, ${String(raw.name || email.split("@")[0])}, ${email}, ${raw.photoUrl ? String(raw.photoUrl) : null}, ${String(raw.provider || "password")}, ${String(raw.role || "user")}, ${String(raw.plan || "trial")}, ${raw.status ? String(raw.status) : null}, ${Boolean(raw.registeredSelf)}, ${String(raw.createdAt || now)}, ${String(raw.lastLoginAt || "-")}, ${raw.trialExpiresDate ? String(raw.trialExpiresDate) : null}, ${raw.paidExpiresDate ? String(raw.paidExpiresDate) : null}, ${customNotes || null}, ${raw.referredBy ? String(raw.referredBy) : null}, ${raw.password ? String(raw.password) : null}, ${raw.admin2FASecret ? String(raw.admin2FASecret) : null}, ${raw.admin2FASetupAt ? String(raw.admin2FASetupAt) : null}, ${now})
+            ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, photo_url = EXCLUDED.photo_url, provider = EXCLUDED.provider, role = EXCLUDED.role, plan = EXCLUDED.plan, status = EXCLUDED.status, registered_self = EXCLUDED.registered_self, created_at = EXCLUDED.created_at, last_login_at = EXCLUDED.last_login_at, trial_expires_date = EXCLUDED.trial_expires_date, paid_expires_date = EXCLUDED.paid_expires_date, custom_notes = EXCLUDED.custom_notes, referred_by = COALESCE(EXCLUDED.referred_by, server_accounts.referred_by), password_hash = COALESCE(EXCLUDED.password_hash, server_accounts.password_hash), admin_2fa_secret = COALESCE(EXCLUDED.admin_2fa_secret, server_accounts.admin_2fa_secret), admin_2fa_setup_at = COALESCE(EXCLUDED.admin_2fa_setup_at, server_accounts.admin_2fa_setup_at), synced_at = EXCLUDED.synced_at
           `;
           upserted += 1;
         }

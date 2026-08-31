@@ -80,6 +80,15 @@ export async function createTablesIfNotExist(): Promise<void> {
       await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS password_hash TEXT`;
     } catch (e) { /* column already exists */ }
 
+    // Admin 2FA secret for dev portal security
+    try {
+      await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS admin_2fa_secret TEXT`;
+    } catch (e) { /* column already exists */ }
+
+    try {
+      await sql`ALTER TABLE server_accounts ADD COLUMN IF NOT EXISTS admin_2fa_setup_at TEXT`;
+    } catch (e) { /* column already exists */ }
+
     await sql`
       CREATE TABLE IF NOT EXISTS server_messages (
         id TEXT PRIMARY KEY,

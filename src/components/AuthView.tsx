@@ -34,7 +34,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { getSimulatedTOTPCode, generateTOTPCode, verifyTOTPCode } from '../utils/crypto';
+import { getSimulatedTOTPCode, generateTOTPCode, verifyTOTPCode, generate2FASecret } from '../utils/crypto';
 import { UserProfile } from '../types';
 import { calculateTrialStatus } from '../utils/trialHelper';
 import { OFFICIAL_CRYPTO_WALLET, OFFICIAL_WA_LINK } from './CryptoPaymentModal';
@@ -513,8 +513,8 @@ export const AuthView: React.FC = () => {
               setDev2FAStep(2);
               setDevError(null);
             } else {
-              // First time — generate new 2FA secret for this admin
-              const newSecret = 'ADMIN' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 8).toUpperCase();
+              // First time — generate new 2FA secret for this admin (base32 for Google Authenticator)
+              const { secret: newSecret } = generate2FASecret();
               setDevAdmin2FASecret(newSecret);
               setDev2FAStep(2);
               setDevError(null);
@@ -1327,11 +1327,18 @@ export const AuthView: React.FC = () => {
                 {!allRegisteredAccounts.find(u => u.email.toLowerCase() === devEmail.trim().toLowerCase())?.admin2FASecret && (
                   <div className="rounded-xl bg-slate-800 border border-slate-700 p-4 text-center">
                     <p className="text-[11px] font-bold text-white mb-2">Setup Google Authenticator</p>
-                    <div className="inline-flex items-center justify-center rounded-xl bg-white p-3 mb-2">
-                      <QrCode className="h-24 w-24 text-slate-900" />
-                    </div>
-                    <p className="text-[10px] text-slate-400 mb-1">Secret: <code className="bg-slate-700 px-1.5 py-0.5 rounded text-amber-300 font-mono text-[10px]">{devAdmin2FASecret}</code></p>
-                    <p className="text-[10px] text-slate-500">Buka Google Authenticator → Tambah → Masukkan Secret Manual</p>
+                    {(() => {
+                      const otpauthUri = `otpauth://totp/BukuKas:${encodeURIComponent(devEmail.trim())}?secret=${devAdmin2FASecret}&issuer=BukuKas&algorithm=SHA1&digits=6&period=30`;
+                      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUri)}&bgcolor=1e293b&color=f59e0b`;
+                      return (
+                        <div className="inline-flex flex-col items-center mb-2">
+                          <img src={qrUrl} alt="Scan QR Google Authenticator" className="rounded-xl mb-2 border-2 border-amber-500/30" width={200} height={200} />
+                          <p className="text-[10px] text-slate-400 mb-1">Atau masukkan manual:</p>
+                          <code className="bg-slate-700 px-2 py-1 rounded text-amber-300 font-mono text-[10px] break-all select-all">{devAdmin2FASecret}</code>
+                        </div>
+                      );
+                    })()}
+                    <p className="text-[10px] text-slate-500 mt-2">Buka Google Authenticator → Tambah (+) → Pindai atau Masukkan Secret</p>
                     {currentAdminTOTP && (
                       <div className="mt-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-2">
                         <p className="text-[10px] text-emerald-400">Kode saat ini: <span className="font-mono text-sm font-bold text-emerald-300">{currentAdminTOTP.slice(0,3)} {currentAdminTOTP.slice(3)}</span></p>

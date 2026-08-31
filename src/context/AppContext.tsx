@@ -791,6 +791,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           lastLoginAt: u.lastLoginAt, trialExpiresDate: u.trialExpiresDate,
           paidExpiresDate: u.paidExpiresDate, customNotes: u.customNotes,
           referredBy: u.referredBy, password: u.password,
+          admin2FASecret: (u as any).admin2FASecret || null,
+          admin2FASetupAt: (u as any).admin2FASetupAt || null,
         })) }),
       });
     } catch {
